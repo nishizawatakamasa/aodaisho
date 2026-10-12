@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aodaisho"
+version = "0.1.0"
+description = "自分用・非汎用"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "Nishizawa Takamasa" }]
+dependencies = [
+    "patchright>=1.40",
+    "playwright>=1.40",
+    "selectolax>=0.3",
+    "pyarrow>=23.0",
+    "camoufox>=0.4",
+    "loguru>=0.7",
+    "tqdm>=4.66",
+]
