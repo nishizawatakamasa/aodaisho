@@ -37,55 +37,55 @@ def _collect_str[T](items: list[T], getter: Callable[[T], str | None]) -> list[s
     return [v for item in items if (v := getter(item))]
 
 
-def ao_page(page: Page) -> AoPage:
-    return AoPage(page)
+def tree_page(page: Page) -> TreePage:
+    return TreePage(page)
 
 
-def ao_element(page: Page, elem: ElementHandle | None) -> AoElement:
-    return AoElement(page, elem)
+def tree_element(page: Page, elem: ElementHandle | None) -> TreeElement:
+    return TreeElement(page, elem)
 
 
-def ao_element_group(page: Page, elems: list[AoElement]) -> AoElementGroup:
-    return AoElementGroup(page, elems)
+def tree_element_group(page: Page, elems: list[TreeElement]) -> TreeElementGroup:
+    return TreeElementGroup(page, elems)
 
 
-def ao_frame(page: Page, frame: Frame | None) -> AoFrame:
-    return AoFrame(page, frame)
+def tree_frame(page: Page, frame: Frame | None) -> TreeFrame:
+    return TreeFrame(page, frame)
 
 
-def ao_shadow_root(page: Page, host: ElementHandle | None) -> AoShadowRoot:
-    return AoShadowRoot(page, host)
+def tree_shadow_root(page: Page, host: ElementHandle | None) -> TreeShadowRoot:
+    return TreeShadowRoot(page, host)
 
 
 class _PageScoped:
     _page: Page
 
-    def ao_element(self, elem: ElementHandle | None) -> AoElement:
-        return ao_element(self._page, elem)
+    def tree_element(self, elem: ElementHandle | None) -> TreeElement:
+        return tree_element(self._page, elem)
 
-    def ao_element_group(self, elems: list[AoElement]) -> AoElementGroup:
-        return ao_element_group(self._page, elems)
+    def tree_element_group(self, elems: list[TreeElement]) -> TreeElementGroup:
+        return tree_element_group(self._page, elems)
 
-    def ao_frame(self, frame: Frame | None) -> AoFrame:
-        return ao_frame(self._page, frame)
+    def tree_frame(self, frame: Frame | None) -> TreeFrame:
+        return tree_frame(self._page, frame)
 
-    def ao_shadow_root(self, host: ElementHandle | None) -> AoShadowRoot:
-        return ao_shadow_root(self._page, host)
-
-
-def ao_parser(parser: LexborHTMLParser) -> AoParser:
-    return AoParser(parser)
+    def tree_shadow_root(self, host: ElementHandle | None) -> TreeShadowRoot:
+        return tree_shadow_root(self._page, host)
 
 
-def ao_node(node: LexborNode | None) -> AoNode:
-    return AoNode(node)
+def tree_parser(parser: LexborHTMLParser) -> TreeParser:
+    return TreeParser(parser)
 
 
-def ao_node_group(nodes: list[AoNode]) -> AoNodeGroup:
-    return AoNodeGroup(nodes)
+def tree_node(node: LexborNode | None) -> TreeNode:
+    return TreeNode(node)
 
 
-class AoPage(_PageScoped):
+def tree_node_group(nodes: list[TreeNode]) -> TreeNodeGroup:
+    return TreeNodeGroup(nodes)
+
+
+class TreePage(_PageScoped):
     def __init__(self, page: Page) -> None:
         self._page = page
 
@@ -93,15 +93,15 @@ class AoPage(_PageScoped):
     def raw(self) -> Page:
         return self._page
 
-    def i(self, selector: str) -> AoElement:
-        '''in'''
+    def into(self, selector: str) -> TreeElement:
+        '''into'''
         elem = self._page.query_selector(selector)
-        return self.ao_element(elem)
+        return self.tree_element(elem)
 
-    def ii(self, selector: str) -> AoElementGroup:
-        '''in all'''
+    def into_every(self, selector: str) -> TreeElementGroup:
+        '''into every'''
         elems = self._page.query_selector_all(selector)
-        return self.ao_element_group([self.ao_element(e) for e in elems])
+        return self.tree_element_group([self.tree_element(e) for e in elems])
 
     def goto(
         self,
@@ -133,7 +133,7 @@ class AoPage(_PageScoped):
             return None
         new_page = self._page.context.new_page()
         try:
-            res = ao_page(new_page).goto(url)
+            res = tree_page(new_page).goto(url)
             if not res:
                 return None
             if res.ok:
@@ -148,17 +148,17 @@ class AoPage(_PageScoped):
         finally:
             new_page.close()
 
-    def w(self, selector: str, state: WaitState = 'attached', timeout: int = 15000) -> AoElement:
-        '''wait'''
+    def until(self, selector: str, state: WaitState = 'attached', timeout: int = 15000) -> TreeElement:
+        '''until'''
         try:
             elem = self._page.wait_for_selector(selector, state=state, timeout=timeout)
-            return self.ao_element(elem)
+            return self.tree_element(elem)
         except Exception as e:
-            logger.warning(f'[wait] {type(e).__name__}: {e} | selector={selector!r} | url={self._page.url!r}')
-            return self.ao_element(None)
+            logger.warning(f'[until] {type(e).__name__}: {e} | selector={selector!r} | url={self._page.url!r}')
+            return self.tree_element(None)
 
 
-class AoElement(_PageScoped):
+class TreeElement(_PageScoped):
     def __init__(self, page: Page, elem: ElementHandle | None) -> None:
         self._page = page
         self._elem = elem
@@ -170,37 +170,37 @@ class AoElement(_PageScoped):
     def raw(self) -> ElementHandle | None:
         return self._elem
 
-    def i(self, selector: str) -> AoElement:
-        '''in'''
+    def into(self, selector: str) -> TreeElement:
+        '''into'''
         if self._elem is None:
-            return self.ao_element(None)
+            return self.tree_element(None)
         elem = self._elem.query_selector(selector)
-        return self.ao_element(elem)
+        return self.tree_element(elem)
 
-    def ii(self, selector: str) -> AoElementGroup:
-        '''in all'''
+    def into_every(self, selector: str) -> TreeElementGroup:
+        '''into every'''
         if self._elem is None:
-            return self.ao_element_group([])
+            return self.tree_element_group([])
         elems = self._elem.query_selector_all(selector)
-        return self.ao_element_group([self.ao_element(e) for e in elems])
+        return self.tree_element_group([self.tree_element(e) for e in elems])
 
     @property
-    def frame(self) -> AoFrame:
+    def into_frame(self) -> TreeFrame:
         if self._elem is None:
-            return self.ao_frame(None)
+            return self.tree_frame(None)
         try:
-            return self.ao_frame(self._elem.content_frame())
+            return self.tree_frame(self._elem.content_frame())
         except Exception as e:
-            logger.error(f'[frame] {type(e).__name__}: {e}')
-            return self.ao_frame(None)
+            logger.error(f'[into_frame] {type(e).__name__}: {e}')
+            return self.tree_frame(None)
 
     @property
-    def shadow(self) -> AoShadowRoot:
-        return self.ao_shadow_root(self._elem)
+    def into_shadow(self) -> TreeShadowRoot:
+        return self.tree_shadow_root(self._elem)
 
-    def _walk_relative(self, selector: str, axis: str, label: str) -> AoElement:
+    def _walk_relative(self, selector: str, axis: str, label: str) -> TreeElement:
         if self._elem is None:
-            return self.ao_element(None)
+            return self.tree_element(None)
         try:
             elem = self._elem.evaluate_handle(
                 '''(el, args) => {
@@ -214,22 +214,22 @@ class AoElement(_PageScoped):
                 }''',
                 [selector, axis],
             ).as_element()
-            return self.ao_element(elem)
+            return self.tree_element(elem)
         except Exception as e:
             logger.error(f'[{label}] {self._elem} {type(e).__name__}: {e}')
-            return self.ao_element(None)
+            return self.tree_element(None)
 
-    def n(self, selector: str) -> AoElement:
-        '''next'''
-        return self._walk_relative(selector, _ELEMENT_NEXT, 'n')
+    def after(self, selector: str) -> TreeElement:
+        '''after'''
+        return self._walk_relative(selector, _ELEMENT_NEXT, 'after')
 
-    def p(self, selector: str) -> AoElement:
-        '''prev'''
-        return self._walk_relative(selector, _ELEMENT_PREV, 'p')
+    def before(self, selector: str) -> TreeElement:
+        '''before'''
+        return self._walk_relative(selector, _ELEMENT_PREV, 'before')
 
-    def o(self, selector: str) -> AoElement:
+    def out(self, selector: str) -> TreeElement:
         '''out'''
-        return self._walk_relative(selector, _ELEMENT_PARENT, 'o')
+        return self._walk_relative(selector, _ELEMENT_PARENT, 'out')
 
     @property
     def text(self) -> str | None:
@@ -348,43 +348,43 @@ class AoElement(_PageScoped):
                 self._isolate_remove(isolate_attr, style_id)
 
 
-class AoElementGroup(_PageScoped):
-    def __init__(self, page: Page, elems: list[AoElement]) -> None:
+class TreeElementGroup(_PageScoped):
+    def __init__(self, page: Page, elems: list[TreeElement]) -> None:
         self._page = page
         self._elems = elems
 
-    def __iter__(self) -> Iterator[AoElement]:
+    def __iter__(self) -> Iterator[TreeElement]:
         return iter(self._elems)
 
     def __len__(self) -> int:
         return len(self._elems)
 
-    def __getitem__(self, key: int | slice) -> AoElement | AoElementGroup:
+    def __getitem__(self, key: int | slice) -> TreeElement | TreeElementGroup:
         if isinstance(key, slice):
-            return AoElementGroup(self._page, self._elems[key])
+            return TreeElementGroup(self._page, self._elems[key])
         return self._elems[key]
 
-    def __add__(self, other: AoElementGroup) -> AoElementGroup:
-        if not isinstance(other, AoElementGroup):
+    def __add__(self, other: TreeElementGroup) -> TreeElementGroup:
+        if not isinstance(other, TreeElementGroup):
             raise TypeError(
-                'AoElementGroup 同士のみ + で結合できます '
+                'TreeElementGroup 同士のみ + で結合できます '
                 f'（右辺は {type(other).__name__}）'
             )
         if self._page is not other._page:
-            raise ValueError('異なる Page に紐づいた AoElementGroup は結合できません')
-        return AoElementGroup(self._page, self._elems + other._elems)
+            raise ValueError('異なる Page に紐づいた TreeElementGroup は結合できません')
+        return TreeElementGroup(self._page, self._elems + other._elems)
 
     @property
-    def raw(self) -> list[AoElement]:
+    def raw(self) -> list[TreeElement]:
         return self._elems
 
     @property
-    def scan(self) -> ElementScan:
-        pairs: list[tuple[str, AoElement]] = []
+    def where(self) -> TreeElementWhere:
+        pairs: list[tuple[str, TreeElement]] = []
         for e in self._elems:
             if (t := e.text):
                 pairs.append((ud.normalize('NFKC', t), e))
-        return ElementScan(self._page, pairs)
+        return TreeElementWhere(self._page, pairs)
 
     @property
     def texts(self) -> list[str]:
@@ -402,12 +402,12 @@ class AoElementGroup(_PageScoped):
         return _collect_str(self._elems, lambda e: e.src)
 
 
-class ElementScan(_PageScoped):
-    def __init__(self, page: Page, pairs: list[tuple[str, AoElement]]) -> None:
+class TreeElementWhere(_PageScoped):
+    def __init__(self, page: Page, pairs: list[tuple[str, TreeElement]]) -> None:
         self._page = page
         self._pairs = pairs
 
-    def m(self, pattern: str) -> AoElement:
+    def m(self, pattern: str) -> TreeElement:
         '''match'''
         try:
             prog = re.compile(pattern)
@@ -415,21 +415,21 @@ class ElementScan(_PageScoped):
                 if prog.search(text):
                     return e
         except Exception as e:
-            logger.warning(f'[scan] {type(e).__name__}: {e} | pattern={pattern!r}')
-        return self.ao_element(None)
+            logger.warning(f'[where] {type(e).__name__}: {e} | pattern={pattern!r}')
+        return self.tree_element(None)
 
-    def mm(self, pattern: str) -> AoElementGroup:
+    def mm(self, pattern: str) -> TreeElementGroup:
         '''match all'''
         try:
             prog = re.compile(pattern)
             filtered = [e for text, e in self._pairs if prog.search(text)]
-            return self.ao_element_group(filtered)
+            return self.tree_element_group(filtered)
         except Exception as e:
-            logger.warning(f'[scan] {type(e).__name__}: {e} | pattern={pattern!r}')
-            return self.ao_element_group([])
+            logger.warning(f'[where] {type(e).__name__}: {e} | pattern={pattern!r}')
+            return self.tree_element_group([])
 
 
-class AoFrame(_PageScoped):
+class TreeFrame(_PageScoped):
     def __init__(self, page: Page, frame: Frame | None) -> None:
         self._page = page
         self._frame = frame
@@ -441,35 +441,35 @@ class AoFrame(_PageScoped):
     def raw(self) -> Frame | None:
         return self._frame
 
-    def i(self, selector: str) -> AoElement:
-        '''in'''
+    def into(self, selector: str) -> TreeElement:
+        '''into'''
         if self._frame is None:
-            return self.ao_element(None)
+            return self.tree_element(None)
         elem = self._frame.query_selector(selector)
-        return self.ao_element(elem)
+        return self.tree_element(elem)
 
-    def ii(self, selector: str) -> AoElementGroup:
-        '''in all'''
+    def into_every(self, selector: str) -> TreeElementGroup:
+        '''into every'''
         if self._frame is None:
-            return self.ao_element_group([])
+            return self.tree_element_group([])
         elems = self._frame.query_selector_all(selector)
-        return self.ao_element_group([self.ao_element(e) for e in elems])
+        return self.tree_element_group([self.tree_element(e) for e in elems])
 
-    def w(self, selector: str, state: WaitState = 'attached', timeout: int = 15000) -> AoElement:
-        '''wait'''
+    def until(self, selector: str, state: WaitState = 'attached', timeout: int = 15000) -> TreeElement:
+        '''until'''
         if self._frame is None:
-            return self.ao_element(None)
+            return self.tree_element(None)
         try:
             elem = self._frame.wait_for_selector(selector, state=state, timeout=timeout)
-            return self.ao_element(elem)
+            return self.tree_element(elem)
         except Exception as e:
             logger.warning(
-                f'[wait] {type(e).__name__}: {e} | selector={selector!r} | url={self._page.url!r}'
+                f'[until] {type(e).__name__}: {e} | selector={selector!r} | url={self._page.url!r}'
             )
-            return self.ao_element(None)
+            return self.tree_element(None)
 
 
-class AoShadowRoot(_PageScoped):
+class TreeShadowRoot(_PageScoped):
     def __init__(self, page: Page, host: ElementHandle | None) -> None:
         self._page = page
         self._host = host
@@ -480,27 +480,27 @@ class AoShadowRoot(_PageScoped):
         try:
             return bool(self._host.evaluate('el => Boolean(el.shadowRoot)'))
         except Exception as e:
-            logger.error(f'[shadow] {type(e).__name__}: {e}')
+            logger.error(f'[into_shadow] {type(e).__name__}: {e}')
             return False
 
-    def i(self, selector: str) -> AoElement:
-        '''in'''
+    def into(self, selector: str) -> TreeElement:
+        '''into'''
         if not self:
-            return self.ao_element(None)
+            return self.tree_element(None)
         try:
             elem = self._host.evaluate_handle(
                 '(el, sel) => el.shadowRoot?.querySelector(sel) ?? null',
                 selector,
             ).as_element()
-            return self.ao_element(elem)
+            return self.tree_element(elem)
         except Exception as e:
-            logger.error(f'[shadow i] {type(e).__name__}: {e} | selector={selector!r}')
-            return self.ao_element(None)
+            logger.error(f'[into_shadow into] {type(e).__name__}: {e} | selector={selector!r}')
+            return self.tree_element(None)
 
-    def ii(self, selector: str) -> AoElementGroup:
-        '''in all'''
+    def into_every(self, selector: str) -> TreeElementGroup:
+        '''into every'''
         if not self:
-            return self.ao_element_group([])
+            return self.tree_element_group([])
         try:
             n = self._host.evaluate(
                 '(el, sel) => el.shadowRoot?.querySelectorAll(sel)?.length ?? 0',
@@ -515,35 +515,35 @@ class AoShadowRoot(_PageScoped):
                     }''',
                     [selector, idx],
                 ).as_element()
-                elems.append(self.ao_element(elem))
-            return self.ao_element_group(elems)
+                elems.append(self.tree_element(elem))
+            return self.tree_element_group(elems)
         except Exception as e:
-            logger.error(f'[shadow ii] {type(e).__name__}: {e} | selector={selector!r}')
-            return self.ao_element_group([])
+            logger.error(f'[into_shadow into_every] {type(e).__name__}: {e} | selector={selector!r}')
+            return self.tree_element_group([])
 
-    def w(self, selector: str, timeout: int = 15000) -> AoElement:
-        '''wait (attached in shadow root only)'''
+    def until(self, selector: str, timeout: int = 15000) -> TreeElement:
+        '''until (attached in shadow root only)'''
         if not self:
-            return self.ao_element(None)
+            return self.tree_element(None)
         frame = self._host.owner_frame()
         if frame is None:
-            logger.warning('[shadow wait] owner_frame is None')
-            return self.ao_element(None)
+            logger.warning('[into_shadow until] owner_frame is None')
+            return self.tree_element(None)
         try:
             frame.wait_for_function(
                 '([el, sel]) => Boolean(el.shadowRoot?.querySelector(sel))',
                 [self._host, selector],
                 timeout=timeout,
             )
-            return self.i(selector)
+            return self.into(selector)
         except Exception as e:
             logger.warning(
-                f'[shadow wait] {type(e).__name__}: {e} | selector={selector!r} | url={self._page.url!r}'
+                f'[into_shadow until] {type(e).__name__}: {e} | selector={selector!r} | url={self._page.url!r}'
             )
-            return self.ao_element(None)
+            return self.tree_element(None)
 
 
-class AoParser:
+class TreeParser:
     def __init__(self, parser: LexborHTMLParser) -> None:
         self._parser = parser
 
@@ -551,21 +551,21 @@ class AoParser:
     def raw(self) -> LexborHTMLParser:
         return self._parser
 
-    def i(self, selector: str) -> AoNode:
-        '''in'''
+    def into(self, selector: str) -> TreeNode:
+        '''into'''
         node = self._parser.css_first(selector)
-        return ao_node(node)
+        return tree_node(node)
 
-    def ii(self, selector: str) -> AoNodeGroup:
-        '''in all'''
+    def into_every(self, selector: str) -> TreeNodeGroup:
+        '''into every'''
         nodes = self._parser.css(selector)
-        return ao_node_group([ao_node(n) for n in nodes])
+        return tree_node_group([tree_node(n) for n in nodes])
 
     def meta(self, name: str) -> str | None:
-        return self.i(f'meta[name="{name}"]').attr('content')
+        return self.into(f'meta[name="{name}"]').attr('content')
 
 
-class AoNode:
+class TreeNode:
     def __init__(self, node: LexborNode | None) -> None:
         self._node = node
 
@@ -576,39 +576,39 @@ class AoNode:
     def raw(self) -> LexborNode | None:
         return self._node
 
-    def i(self, selector: str) -> AoNode:
-        '''in'''
+    def into(self, selector: str) -> TreeNode:
+        '''into'''
         if self._node is None:
-            return ao_node(None)
+            return tree_node(None)
         node = self._node.css_first(selector)
-        return ao_node(node)
+        return tree_node(node)
 
-    def ii(self, selector: str) -> AoNodeGroup:
-        '''in all'''
+    def into_every(self, selector: str) -> TreeNodeGroup:
+        '''into every'''
         if self._node is None:
-            return ao_node_group([])
+            return tree_node_group([])
         nodes = self._node.css(selector)
-        return ao_node_group([ao_node(n) for n in nodes])
+        return tree_node_group([tree_node(n) for n in nodes])
 
-    def _walk_relative(self, selector: str, axis: str) -> AoNode:
+    def _walk_relative(self, selector: str, axis: str) -> TreeNode:
         if self._node is None:
-            return ao_node(None)
+            return tree_node(None)
         cur = getattr(self._node, axis)
         while cur is not None:
             if cur.is_element_node and cur.css_matches(selector):
-                return ao_node(cur)
+                return tree_node(cur)
             cur = getattr(cur, axis)
-        return ao_node(None)
+        return tree_node(None)
 
-    def n(self, selector: str) -> AoNode:
-        '''next'''
+    def after(self, selector: str) -> TreeNode:
+        '''after'''
         return self._walk_relative(selector, _NODE_NEXT)
 
-    def p(self, selector: str) -> AoNode:
-        '''prev'''
+    def before(self, selector: str) -> TreeNode:
+        '''before'''
         return self._walk_relative(selector, _NODE_PREV)
 
-    def o(self, selector: str) -> AoNode:
+    def out(self, selector: str) -> TreeNode:
         '''out'''
         return self._walk_relative(selector, _NODE_PARENT)
 
@@ -624,40 +624,40 @@ class AoNode:
         return attr if (attr := self._node.attributes.get(attr_name)) else None
 
 
-class AoNodeGroup:
-    def __init__(self, nodes: list[AoNode]) -> None:
+class TreeNodeGroup:
+    def __init__(self, nodes: list[TreeNode]) -> None:
         self._nodes = nodes
 
-    def __iter__(self) -> Iterator[AoNode]:
+    def __iter__(self) -> Iterator[TreeNode]:
         return iter(self._nodes)
 
     def __len__(self) -> int:
         return len(self._nodes)
 
-    def __getitem__(self, key: int | slice) -> AoNode | AoNodeGroup:
+    def __getitem__(self, key: int | slice) -> TreeNode | TreeNodeGroup:
         if isinstance(key, slice):
-            return AoNodeGroup(self._nodes[key])
+            return TreeNodeGroup(self._nodes[key])
         return self._nodes[key]
 
-    def __add__(self, other: AoNodeGroup) -> AoNodeGroup:
-        if not isinstance(other, AoNodeGroup):
+    def __add__(self, other: TreeNodeGroup) -> TreeNodeGroup:
+        if not isinstance(other, TreeNodeGroup):
             raise TypeError(
-                'AoNodeGroup 同士のみ + で結合できます '
+                'TreeNodeGroup 同士のみ + で結合できます '
                 f'（右辺は {type(other).__name__}）'
             )
-        return AoNodeGroup(self._nodes + other._nodes)
+        return TreeNodeGroup(self._nodes + other._nodes)
 
     @property
-    def raw(self) -> list[AoNode]:
+    def raw(self) -> list[TreeNode]:
         return self._nodes
 
     @property
-    def scan(self) -> NodeScan:
-        pairs: list[tuple[str, AoNode]] = []
+    def where(self) -> TreeNodeWhere:
+        pairs: list[tuple[str, TreeNode]] = []
         for n in self._nodes:
             if (t := n.text):
                 pairs.append((ud.normalize('NFKC', t), n))
-        return NodeScan(pairs)
+        return TreeNodeWhere(pairs)
 
     @property
     def texts(self) -> list[str]:
@@ -667,11 +667,11 @@ class AoNodeGroup:
         return _collect_str(self._nodes, lambda n: n.attr(attr_name))
 
 
-class NodeScan:
-    def __init__(self, pairs: list[tuple[str, AoNode]]) -> None:
+class TreeNodeWhere:
+    def __init__(self, pairs: list[tuple[str, TreeNode]]) -> None:
         self._pairs = pairs
 
-    def m(self, pattern: str) -> AoNode:
+    def m(self, pattern: str) -> TreeNode:
         '''match'''
         try:
             prog = re.compile(pattern)
@@ -679,15 +679,15 @@ class NodeScan:
                 if prog.search(text):
                     return n
         except Exception as e:
-            logger.warning(f'[scan] {type(e).__name__}: {e} | pattern={pattern!r}')
-        return ao_node(None)
+            logger.warning(f'[where] {type(e).__name__}: {e} | pattern={pattern!r}')
+        return tree_node(None)
 
-    def mm(self, pattern: str) -> AoNodeGroup:
+    def mm(self, pattern: str) -> TreeNodeGroup:
         '''match all'''
         try:
             prog = re.compile(pattern)
             filtered = [n for text, n in self._pairs if prog.search(text)]
-            return ao_node_group(filtered)
+            return tree_node_group(filtered)
         except Exception as e:
-            logger.warning(f'[scan] {type(e).__name__}: {e} | pattern={pattern!r}')
-            return ao_node_group([])
+            logger.warning(f'[where] {type(e).__name__}: {e} | pattern={pattern!r}')
+            return tree_node_group([])
