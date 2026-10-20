@@ -16,9 +16,10 @@ from urllib.parse import urlencode
 
 from loguru import logger
 
-from aodaisho.core import tree_page
+from aodaisho.tree import tree_page
 from aodaisho.live import RecycleEvery, open_patchright
-from aodaisho.utils import save_log, from_here, write_csv
+from aodaisho.kit import from_here
+from aodaisho.vault import save_log, write_csv
 
 here = from_here(__file__)
 save_log(here('log/crawling.log'))
@@ -58,13 +59,12 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from aodaisho.core import tree_page
+from aodaisho.tree import tree_page
 from aodaisho.live import RecycleEvery, open_patchright
-from aodaisho.utils import (
+from aodaisho.kit import from_here, meta_tags
+from aodaisho.vault import (
     save_log,
     append_csv,
-    from_here,
-    meta_tags,
     hash_name,
     write_text,
 )
@@ -121,8 +121,8 @@ from pathlib import Path
 
 import pyperclip
 
-from aodaisho.core import tree_parser
-from aodaisho.utils import from_here, glob_paths, parse_html, process_map
+from aodaisho.tree import tree_parser
+from aodaisho.kit import from_here, glob_paths, parse_html, process_map
 
 
 def main() -> None:
@@ -149,8 +149,9 @@ if __name__ == '__main__':
 ```python
 from pathlib import Path
 
-from aodaisho.core import tree_parser
-from aodaisho.utils import from_here, glob_paths, parse_html, process_map, write_parquet
+from aodaisho.tree import tree_parser
+from aodaisho.kit import from_here, glob_paths, parse_html, process_map
+from aodaisho.vault import write_parquet
 
 def main() -> None:
     here = from_here(__file__)
