@@ -64,7 +64,7 @@ from aodaisho.utils import (
     save_log,
     append_csv,
     from_here,
-    meta_html,
+    meta_tags,
     hash_name,
     write_text,
 )
@@ -94,7 +94,7 @@ with open_patchright(
                 'reason': 'goto',
             })
             continue
-        html = meta_html({
+        html = meta_tags({
             'aodaisho:url_index': url_index,
             'aodaisho:saved_at': datetime.now(timezone.utc),
             'aodaisho:request_url': request_url,

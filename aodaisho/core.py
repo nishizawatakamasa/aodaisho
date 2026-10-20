@@ -253,9 +253,9 @@ class TreeElement(_PageScoped):
     def src(self) -> str | None:
         return self._resolved_url_from_attr('src')
 
-    def scroll_into_view(self) -> None:
+    def scroll(self) -> None:
         if self._elem is None:
-            logger.warning('[scroll_into_view] element is None')
+            logger.warning('[scroll] element is None')
             return
         try:
             self._elem.evaluate(
@@ -263,7 +263,7 @@ class TreeElement(_PageScoped):
             )
             self._elem.wait_for_element_state('stable')
         except Exception as e:
-            logger.warning(f'[scroll_into_view] {type(e).__name__}: {e} | url={self._page.url!r}')
+            logger.warning(f'[scroll] {type(e).__name__}: {e} | url={self._page.url!r}')
 
     @staticmethod
     def _isolate_visibility_css(scope: str, attr: str) -> str:

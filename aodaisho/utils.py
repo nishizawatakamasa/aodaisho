@@ -24,7 +24,7 @@ def parse_html(html: str | bytes) -> LexborHTMLParser | None:
         return None
 
 
-def meta_html(meta: Mapping[str, object | None]) -> str:
+def meta_tags(meta: Mapping[str, object | None]) -> str:
     return ''.join(
         f'<meta name="{html.escape(name)}" content="{html.escape(str(content))}">'
         for name, content in meta.items()
@@ -63,6 +63,7 @@ def write_csv(path: Path, rows: list[dict]) -> None:
     Excel 互換のため UTF-8 BOM（``utf-8-sig``）とヘッダ行を付ける。
     ``rows`` が空ならスキップ（警告のみ）。列順は先頭行の ``keys()`` の順で、
     2 回目以降のキーずれは検知しない（``append_csv`` と同じ）。
+    書き込み失敗はログしたあと例外を再送出する。
     '''
     try:
         if not rows:
@@ -75,6 +76,7 @@ def write_csv(path: Path, rows: list[dict]) -> None:
             w.writerows(rows)
     except Exception as e:
         logger.error(f'[write_csv] {path} {type(e).__name__}: {e}')
+        raise
 
 def write_parquet(path: Path, rows: list[dict]) -> None:
     '''``rows`` を Parquet ファイルとして書き出す。
@@ -82,6 +84,7 @@ def write_parquet(path: Path, rows: list[dict]) -> None:
     pyarrow を直接使う（pandas 非依存）。``rows`` が空ならスキップ（警告のみ）。
     列スキーマは各列の最初の non-None 値から推論されるので、**同一キーで型が
     混在するとエラーになる**ことがある点に注意。
+    書き込み失敗はログしたあと例外を再送出する。
     '''
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -94,6 +97,7 @@ def write_parquet(path: Path, rows: list[dict]) -> None:
         pq.write_table(pa.Table.from_pylist(rows), path)
     except Exception as e:
         logger.error(f'[write_parquet] {path} {type(e).__name__}: {e}')
+        raise
 
 def hash_name(key: str) -> str:
     return hashlib.md5(key.encode()).hexdigest()
