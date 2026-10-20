@@ -94,12 +94,10 @@ class TreePage(_PageScoped):
         return self._page
 
     def into(self, selector: str) -> TreeElement:
-        '''into'''
         elem = self._page.query_selector(selector)
         return self.tree_element(elem)
 
     def into_every(self, selector: str) -> TreeElementGroup:
-        '''into every'''
         elems = self._page.query_selector_all(selector)
         return self.tree_element_group([self.tree_element(e) for e in elems])
 
@@ -149,7 +147,6 @@ class TreePage(_PageScoped):
             new_page.close()
 
     def until(self, selector: str, state: WaitState = 'attached', timeout: int = 15000) -> TreeElement:
-        '''until'''
         try:
             elem = self._page.wait_for_selector(selector, state=state, timeout=timeout)
             return self.tree_element(elem)
@@ -171,14 +168,12 @@ class TreeElement(_PageScoped):
         return self._elem
 
     def into(self, selector: str) -> TreeElement:
-        '''into'''
         if self._elem is None:
             return self.tree_element(None)
         elem = self._elem.query_selector(selector)
         return self.tree_element(elem)
 
     def into_every(self, selector: str) -> TreeElementGroup:
-        '''into every'''
         if self._elem is None:
             return self.tree_element_group([])
         elems = self._elem.query_selector_all(selector)
@@ -220,15 +215,12 @@ class TreeElement(_PageScoped):
             return self.tree_element(None)
 
     def after(self, selector: str) -> TreeElement:
-        '''after'''
         return self._walk_relative(selector, _ELEMENT_NEXT, 'after')
 
     def before(self, selector: str) -> TreeElement:
-        '''before'''
         return self._walk_relative(selector, _ELEMENT_PREV, 'before')
 
     def out(self, selector: str) -> TreeElement:
-        '''out'''
         return self._walk_relative(selector, _ELEMENT_PARENT, 'out')
 
     @property
@@ -379,12 +371,12 @@ class TreeElementGroup(_PageScoped):
         return self._elems
 
     @property
-    def where(self) -> TreeElementWhere:
+    def seeking(self) -> TreeElementSeeker:
         pairs: list[tuple[str, TreeElement]] = []
         for e in self._elems:
             if (t := e.text):
                 pairs.append((ud.normalize('NFKC', t), e))
-        return TreeElementWhere(self._page, pairs)
+        return TreeElementSeeker(self._page, pairs)
 
     @property
     def texts(self) -> list[str]:
@@ -402,30 +394,28 @@ class TreeElementGroup(_PageScoped):
         return _collect_str(self._elems, lambda e: e.src)
 
 
-class TreeElementWhere(_PageScoped):
+class TreeElementSeeker(_PageScoped):
     def __init__(self, page: Page, pairs: list[tuple[str, TreeElement]]) -> None:
         self._page = page
         self._pairs = pairs
 
-    def m(self, pattern: str) -> TreeElement:
-        '''match'''
+    def one(self, pattern: str) -> TreeElement:
         try:
             prog = re.compile(pattern)
             for text, e in self._pairs:
                 if prog.search(text):
                     return e
         except Exception as e:
-            logger.warning(f'[where] {type(e).__name__}: {e} | pattern={pattern!r}')
+            logger.warning(f'[seeking] {type(e).__name__}: {e} | pattern={pattern!r}')
         return self.tree_element(None)
 
-    def mm(self, pattern: str) -> TreeElementGroup:
-        '''match all'''
+    def all(self, pattern: str) -> TreeElementGroup:
         try:
             prog = re.compile(pattern)
             filtered = [e for text, e in self._pairs if prog.search(text)]
             return self.tree_element_group(filtered)
         except Exception as e:
-            logger.warning(f'[where] {type(e).__name__}: {e} | pattern={pattern!r}')
+            logger.warning(f'[seeking] {type(e).__name__}: {e} | pattern={pattern!r}')
             return self.tree_element_group([])
 
 
@@ -442,21 +432,18 @@ class TreeFrame(_PageScoped):
         return self._frame
 
     def into(self, selector: str) -> TreeElement:
-        '''into'''
         if self._frame is None:
             return self.tree_element(None)
         elem = self._frame.query_selector(selector)
         return self.tree_element(elem)
 
     def into_every(self, selector: str) -> TreeElementGroup:
-        '''into every'''
         if self._frame is None:
             return self.tree_element_group([])
         elems = self._frame.query_selector_all(selector)
         return self.tree_element_group([self.tree_element(e) for e in elems])
 
     def until(self, selector: str, state: WaitState = 'attached', timeout: int = 15000) -> TreeElement:
-        '''until'''
         if self._frame is None:
             return self.tree_element(None)
         try:
@@ -484,7 +471,6 @@ class TreeShadowRoot(_PageScoped):
             return False
 
     def into(self, selector: str) -> TreeElement:
-        '''into'''
         if not self:
             return self.tree_element(None)
         try:
@@ -498,7 +484,6 @@ class TreeShadowRoot(_PageScoped):
             return self.tree_element(None)
 
     def into_every(self, selector: str) -> TreeElementGroup:
-        '''into every'''
         if not self:
             return self.tree_element_group([])
         try:
@@ -522,7 +507,10 @@ class TreeShadowRoot(_PageScoped):
             return self.tree_element_group([])
 
     def until(self, selector: str, timeout: int = 15000) -> TreeElement:
-        '''until (attached in shadow root only)'''
+        '''
+        wait_for_selector は shadow root を同じようには扱えない。
+        代わりに wait_for_function を使う（state='attached' 相当に固定）。
+        '''
         if not self:
             return self.tree_element(None)
         frame = self._host.owner_frame()
@@ -552,12 +540,10 @@ class TreeParser:
         return self._parser
 
     def into(self, selector: str) -> TreeNode:
-        '''into'''
         node = self._parser.css_first(selector)
         return tree_node(node)
 
     def into_every(self, selector: str) -> TreeNodeGroup:
-        '''into every'''
         nodes = self._parser.css(selector)
         return tree_node_group([tree_node(n) for n in nodes])
 
@@ -577,14 +563,12 @@ class TreeNode:
         return self._node
 
     def into(self, selector: str) -> TreeNode:
-        '''into'''
         if self._node is None:
             return tree_node(None)
         node = self._node.css_first(selector)
         return tree_node(node)
 
     def into_every(self, selector: str) -> TreeNodeGroup:
-        '''into every'''
         if self._node is None:
             return tree_node_group([])
         nodes = self._node.css(selector)
@@ -601,15 +585,12 @@ class TreeNode:
         return tree_node(None)
 
     def after(self, selector: str) -> TreeNode:
-        '''after'''
         return self._walk_relative(selector, _NODE_NEXT)
 
     def before(self, selector: str) -> TreeNode:
-        '''before'''
         return self._walk_relative(selector, _NODE_PREV)
 
     def out(self, selector: str) -> TreeNode:
-        '''out'''
         return self._walk_relative(selector, _NODE_PARENT)
 
     @property
@@ -652,12 +633,12 @@ class TreeNodeGroup:
         return self._nodes
 
     @property
-    def where(self) -> TreeNodeWhere:
+    def seeking(self) -> TreeNodeSeeker:
         pairs: list[tuple[str, TreeNode]] = []
         for n in self._nodes:
             if (t := n.text):
                 pairs.append((ud.normalize('NFKC', t), n))
-        return TreeNodeWhere(pairs)
+        return TreeNodeSeeker(pairs)
 
     @property
     def texts(self) -> list[str]:
@@ -667,27 +648,25 @@ class TreeNodeGroup:
         return _collect_str(self._nodes, lambda n: n.attr(attr_name))
 
 
-class TreeNodeWhere:
+class TreeNodeSeeker:
     def __init__(self, pairs: list[tuple[str, TreeNode]]) -> None:
         self._pairs = pairs
 
-    def m(self, pattern: str) -> TreeNode:
-        '''match'''
+    def one(self, pattern: str) -> TreeNode:
         try:
             prog = re.compile(pattern)
             for text, n in self._pairs:
                 if prog.search(text):
                     return n
         except Exception as e:
-            logger.warning(f'[where] {type(e).__name__}: {e} | pattern={pattern!r}')
+            logger.warning(f'[seeking] {type(e).__name__}: {e} | pattern={pattern!r}')
         return tree_node(None)
 
-    def mm(self, pattern: str) -> TreeNodeGroup:
-        '''match all'''
+    def all(self, pattern: str) -> TreeNodeGroup:
         try:
             prog = re.compile(pattern)
             filtered = [n for text, n in self._pairs if prog.search(text)]
             return tree_node_group(filtered)
         except Exception as e:
-            logger.warning(f'[where] {type(e).__name__}: {e} | pattern={pattern!r}')
+            logger.warning(f'[seeking] {type(e).__name__}: {e} | pattern={pattern!r}')
             return tree_node_group([])

@@ -29,9 +29,9 @@ with open_patchright(
     recycle=RecycleEvery(browser=300, context=100, page=20),
 ) as s:
     page = s.page()
-    p = tree_page(page)
-    p.goto('https://home.katitas.jp/buyers_search')
-    prefecture_urls = p.into_every('div ul li a[href^="https://home.katitas.jp/buyers_search/area"]').urls
+    tree = tree_page(page)
+    tree.goto('https://home.katitas.jp/buyers_search')
+    prefecture_urls = tree.into_every('div ul li a[href^="https://home.katitas.jp/buyers_search/area"]').urls
 
     n = len(prefecture_urls)
     urls = []
@@ -39,10 +39,10 @@ with open_patchright(
         print(f'prefecture_url {i}/{n}')
         for page_num in range(1, 200):
             page = s.page()
-            p = tree_page(page)
-            if not p.goto(f'{prefecture_url}?{urlencode({"page": page_num})}'):
+            tree = tree_page(page)
+            if not tree.goto(f'{prefecture_url}?{urlencode({"page": page_num})}'):
                 break
-            if not (bukken_elems := p.into_every('ul li div a[href^="https://home.katitas.jp"]:has(p)')):
+            if not (bukken_elems := tree.into_every('ul li div a[href^="https://home.katitas.jp"]:has(p)')):
                 break
             urls.extend(bukken_elems.urls)
         else:
@@ -86,8 +86,8 @@ with open_patchright(
     for url_index, request_url in items:
         print(f'url_index {url_index}/{n - 1}')
         page = s.page()
-        p = tree_page(page)
-        if not (response := p.goto(request_url)):
+        tree = tree_page(page)
+        if not (response := tree.goto(request_url)):
             append_csv(here('csv/failed.csv'), {
                 'url_index': url_index,
                 'request_url': request_url,
@@ -136,8 +136,8 @@ def main() -> None:
 def labels_in_file(file_path: str) -> list[str] | None:
     if not (parser := parse_html(Path(file_path).read_bytes())):
         return None
-    p = tree_parser(parser)
-    return [t.strip() for t in p.into_every('dt').texts if t and t.strip()]
+    tree = tree_parser(parser)
+    return [t.strip() for t in tree.into_every('dt').texts if t and t.strip()]
 
 
 if __name__ == '__main__':
@@ -161,11 +161,11 @@ def main() -> None:
 def extract(file_path: str) -> dict[str, str] | None:
     if not (parser := parse_html(Path(file_path).read_bytes())):
         return None
-    p = tree_parser(parser)
-    dt_where = p.into_every('dt').where
+    tree = tree_parser(parser)
+    dt_seeker = tree.into_every('dt').seeking
 
     def dd_text(pattern: str) -> str | None:
-        return dt_where.m(pattern).after('dd').text
+        return dt_seeker.one(pattern).after('dd').text
     
     dt_texts = [
         '価格',
@@ -215,19 +215,19 @@ def extract(file_path: str) -> dict[str, str] | None:
     ]
 
     return {
-        'url_index': p.meta('aodaisho:url_index'),
-        'saved_at': p.meta('aodaisho:saved_at'),
-        'request_url': p.meta('aodaisho:request_url'),
-        'final_url': p.meta('aodaisho:final_url'),
-        'goto_status': p.meta('aodaisho:goto_status'),
+        'url_index': tree.meta('aodaisho:url_index'),
+        'saved_at': tree.meta('aodaisho:saved_at'),
+        'request_url': tree.meta('aodaisho:request_url'),
+        'final_url': tree.meta('aodaisho:final_url'),
+        'goto_status': tree.meta('aodaisho:goto_status'),
         'ファイル名': Path(file_path).name,
 
-        '取り扱い店舗': p.into_every('p').where.m(r'取り扱い店舗').after('p').text,
+        '取り扱い店舗': tree.into_every('p').seeking.one(r'取り扱い店舗').after('p').text,
 
-        'スタッフからのコメント': p.into('.js-staff_comment').text,
-        '物件の魅力': p.into_every('p').where.m(r'物件の魅力').after('p').text,
+        'スタッフからのコメント': tree.into('.js-staff_comment').text,
+        '物件の魅力': tree.into_every('p').seeking.one(r'物件の魅力').after('p').text,
 
-        'img_desc': '\n'.join(p.into_every('p.text-left').where.m(r'画像をクリックすると拡大画像がご覧に').after('ul').into_every('li').texts)
+        'img_desc': '\n'.join(tree.into_every('p.text-left').seeking.one(r'画像をクリックすると拡大画像がご覧に').after('ul').into_every('li').texts)
     } | {dt_text: dd_text(dt_text) for dt_text in dt_texts}
 
 if __name__ == '__main__':
