@@ -31,7 +31,7 @@ class RecycleEvery:
                 raise ValueError(f'{f.name} は 1 以上で指定してください (got {value})')
 
 
-class _SessionBase:
+class _PlaywrightSessionBase:
     def __init__(
         self,
         *,
@@ -94,7 +94,7 @@ class _SessionBase:
         self._context = None
 
 
-class PatchrightSession(_SessionBase):
+class PatchrightSession(_PlaywrightSessionBase):
     def __init__(
         self,
         *,
@@ -141,7 +141,7 @@ class PatchrightSession(_SessionBase):
         self._browser = None
 
 
-class CamoufoxSession(_SessionBase):
+class CamoufoxSession(_PlaywrightSessionBase):
     def __init__(
         self,
         *,
