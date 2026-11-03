@@ -73,7 +73,7 @@ class _PageScoped:
         return tree_shadow_root(self._page, host)
 
 
-def tree_parser(parser: LexborHTMLParser) -> TreeParser:
+def tree_parser(parser: LexborHTMLParser | None) -> TreeParser:
     return TreeParser(parser)
 
 
@@ -532,23 +532,27 @@ class TreeShadowRoot(_PageScoped):
 
 
 class TreeParser:
-    def __init__(self, parser: LexborHTMLParser) -> None:
+    def __init__(self, parser: LexborHTMLParser | None) -> None:
         self._parser = parser
 
+    def __bool__(self) -> bool:
+        return self._parser is not None
+
     @property
-    def raw(self) -> LexborHTMLParser:
+    def raw(self) -> LexborHTMLParser | None:
         return self._parser
 
     def into(self, selector: str) -> TreeNode:
+        if self._parser is None:
+            return tree_node(None)
         node = self._parser.css_first(selector)
         return tree_node(node)
 
     def into_every(self, selector: str) -> TreeNodeGroup:
+        if self._parser is None:
+            return tree_node_group([])
         nodes = self._parser.css(selector)
         return tree_node_group([tree_node(n) for n in nodes])
-
-    def meta(self, name: str) -> str | None:
-        return self.into(f'meta[name="{name}"]').attr('content')
 
 
 class TreeNode:

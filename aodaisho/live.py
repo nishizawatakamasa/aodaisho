@@ -50,7 +50,7 @@ class _PlaywrightSessionBase:
         self._page_calls = 0
         self._entered = False
 
-    def page(self) -> Page:
+    def next_page(self) -> Page:
         """Playwright の Page を返す。
 
         初回は browser → context → page を遅延オープンする。
@@ -58,7 +58,7 @@ class _PlaywrightSessionBase:
         純粋な getter ではなく、呼び出しのたびに内部カウンタが進む（リサイクル間隔もこの回数基準）。
         """
         if not self._entered:
-            raise RuntimeError('with ブロックの外で page() を呼べません')
+            raise RuntimeError('with ブロックの外で next_page() を呼べません')
         if self._browser is None:
             self._open_browser()
         elif (b := self._recycle.browser) and self._page_calls % b == 0:
@@ -204,7 +204,7 @@ def open_patchright(
             context_options={'viewport': {'width': 1920, 'height': 1080}},
             recycle=RecycleEvery(browser=300, context=100, page=20),
         ) as s:
-            page = s.page()
+            page = s.next_page()
     """
     return PatchrightSession(
         browser_options=browser_options,
@@ -230,7 +230,7 @@ def open_camoufox(
             context_options={'viewport': {'width': 1920, 'height': 1080}},
             recycle=RecycleEvery(browser=300, context=100, page=20),
         ) as s:
-            page = s.page()
+            page = s.next_page()
     """
     return CamoufoxSession(
         browser_options=browser_options,

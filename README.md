@@ -18,8 +18,7 @@ from loguru import logger
 
 from aodaisho.tree import tree_page
 from aodaisho.live import RecycleEvery, open_patchright
-from aodaisho.kit import from_here
-from aodaisho.vault import save_log, write_csv
+from aodaisho.kit import from_here, save_log, write_csv
 
 here = from_here(__file__)
 save_log(here('log/crawling.log'))
@@ -28,9 +27,8 @@ with open_patchright(
     browser_options={'channel': 'chrome', 'headless': False},
     context_options={'viewport': {'width': 1920, 'height': 1080}},
     recycle=RecycleEvery(browser=300, context=100, page=20),
-) as s:
-    page = s.page()
-    tree = tree_page(page)
+) as session:
+    tree = tree_page(session.next_page())
     tree.goto('https://home.katitas.jp/buyers_search')
     prefecture_urls = tree.into_every('div ul li a[href^="https://home.katitas.jp/buyers_search/area"]').urls
 
@@ -39,8 +37,7 @@ with open_patchright(
     for i, prefecture_url in enumerate(prefecture_urls, 1):
         print(f'prefecture_url {i}/{n}')
         for page_num in range(1, 200):
-            page = s.page()
-            tree = tree_page(page)
+            tree = tree_page(session.next_page())
             if not tree.goto(f'{prefecture_url}?{urlencode({"page": page_num})}'):
                 break
             if not (bukken_elems := tree.into_every('ul li div a[href^="https://home.katitas.jp"]:has(p)')):
@@ -54,90 +51,80 @@ write_csv(here('csv/urls.csv'), [{'url': url} for url in set(urls)])
 ### scrape.py
 
 ```python
-import time
 from datetime import datetime, timezone
 
 import pandas as pd
 
 from aodaisho.tree import tree_page
 from aodaisho.live import RecycleEvery, open_patchright
-from aodaisho.kit import from_here, meta_tags
-from aodaisho.vault import (
-    save_log,
-    append_csv,
-    hash_name,
-    write_text,
-)
+from aodaisho.kit import from_here, save_log
+from aodaisho.vault import open_sqlite, zstd_compress
 
 here = from_here(__file__)
 save_log(here('log/scraping.log'))
 
-start_time = time.perf_counter()
+PAGES = {
+    'url_index': 'INTEGER',
+    'saved_at': 'TEXT',
+    'request_url': 'TEXT NOT NULL',
+    'final_url': 'TEXT',
+    'http_status': 'INTEGER',
+    'error_reason': 'TEXT',
+    'html_zstd': 'BLOB',
+}
 
 items = list(pd.read_csv(here('csv/urls.csv'))['url'].items())
-# items = list(pd.read_csv(here('csv/failed.csv'), index_col='url_index')['request_url'].items())
-n = len(items)
+db_path = here('data/runs/2026-10-18_030000.db')
 
-with open_patchright(
-    browser_options={'channel': 'chrome', 'headless': False},
-    context_options={'viewport': {'width': 1920, 'height': 1080}},
-    recycle=RecycleEvery(browser=300, context=100),
-) as s:
+with (
+    open_sqlite(db_path) as db,
+    open_patchright(
+        browser_options={'channel': 'chrome', 'headless': False},
+        context_options={'viewport': {'width': 1920, 'height': 1080}},
+        recycle=RecycleEvery(browser=300, context=100),
+    ) as session,
+):
+    pages = db.create_table('pages', PAGES)
     for url_index, request_url in items:
-        print(f'url_index {url_index}/{n - 1}')
-        page = s.page()
-        tree = tree_page(page)
-        if not (response := tree.goto(request_url)):
-            append_csv(here('csv/failed.csv'), {
-                'url_index': url_index,
-                'request_url': request_url,
-                'reason': 'goto',
-            })
-            continue
-        html = meta_tags({
-            'aodaisho:url_index': url_index,
-            'aodaisho:saved_at': datetime.now(timezone.utc),
-            'aodaisho:request_url': request_url,
-            'aodaisho:final_url': page.url,
-            'aodaisho:goto_status': response.status,
-        }) + page.content()
-        if not write_text(here('html') / f'{hash_name(page.url)}.html', html):
-            append_csv(here('csv/failed.csv'), {
-                'url_index': url_index,
-                'request_url': request_url,
-                'final_url': page.url,
-                'reason': 'write_text',
-            })
-            continue
-
-elapsed = time.perf_counter() - start_time
-print(f'Total execution time: {elapsed:.2f}s')
+        tree = tree_page(session.next_page())
+        response = tree.goto(request_url)
+        pages.insert({
+            'url_index': url_index,
+            'saved_at': datetime.now(timezone.utc).isoformat(),
+            'request_url': request_url,
+            'final_url': tree.raw.url if response else None,
+            'http_status': response.status if response else None,
+            'error_reason': None if response else 'goto',
+            'html_zstd': zstd_compress(tree.raw.content()) if response else None,
+        })
 ```
 
 ### discover.py
 
 ```python
-from pathlib import Path
+from typing import Any
 
 import pyperclip
 
 from aodaisho.tree import tree_parser
-from aodaisho.kit import from_here, glob_paths, parse_html, process_map
+from aodaisho.kit import from_here, parse_html
+from aodaisho.vault import read_sqlite, zstd_decompress
 
 
 def main() -> None:
     here = from_here(__file__)
-    html_paths = glob_paths(here('html'), '*.html')
-    results = [r for r in process_map(labels_in_file, html_paths) if r]
-    labels = [label for part in results for label in part]
+    db_path = here('data/runs/2026-10-18_030000.db')
+    results = read_sqlite(db_path).table('pages').map(labels_in_row)
+    labels = [label for row in results for label in row['labels']]
     pyperclip.copy('\n'.join(set(labels)))
 
 
-def labels_in_file(file_path: str) -> list[str] | None:
-    if not (parser := parse_html(Path(file_path).read_bytes())):
-        return None
-    tree = tree_parser(parser)
-    return [t.strip() for t in tree.into_every('dt').texts if t and t.strip()]
+def labels_in_row(row: dict[str, Any]) -> dict:
+    blob = row['html_zstd']
+    tree = tree_parser(parse_html(zstd_decompress(blob)) if blob else None)
+    return {
+        'labels': [t.strip() for t in tree.into_every('dt').texts if t and t.strip()],
+    }
 
 
 if __name__ == '__main__':
@@ -147,89 +134,35 @@ if __name__ == '__main__':
 ### extract.py
 
 ```python
-from pathlib import Path
+from typing import Any
 
 from aodaisho.tree import tree_parser
-from aodaisho.kit import from_here, glob_paths, parse_html, process_map
-from aodaisho.vault import write_parquet
+from aodaisho.kit import from_here, parse_html, write_parquet, save_log
+from aodaisho.vault import read_sqlite, zstd_decompress
+
 
 def main() -> None:
     here = from_here(__file__)
-    html_paths = glob_paths(here('html'), '*.html')
-    results = [r for r in process_map(extract, html_paths) if r]
-    write_parquet(here('parquet/extract.parquet'), results)
+    save_log(here('log/extract.log'))
+    db_path = here('data/runs/2026-10-18_030000.db')
+    rows = read_sqlite(db_path).table('pages').map(extract)
+    write_parquet(here('parquet/extract.parquet'), rows)
 
-def extract(file_path: str) -> dict[str, str] | None:
-    if not (parser := parse_html(Path(file_path).read_bytes())):
-        return None
-    tree = tree_parser(parser)
-    dt_seeker = tree.into_every('dt').seeking
 
-    def dd_text(pattern: str) -> str | None:
-        return dt_seeker.one(pattern).after('dd').text
-    
-    dt_texts = [
-        '価格',
-        '交通',
-        '総戸数',
-        '月々の支払い目安額',
-        'セットバック',
-        '引渡日（入居予定日）',
-        '所在階',
-        '土地面積',
-        '取引態様',
-        '設備・条件',
-        '最寄りの学校',
-        '専有面積',
-        '接道状況',
-        '間取り',
-        '備考',
-        '建ぺい率 /容積率',
-        '物件種別',
-        '管理会社',
-        '次回更新予定日',
-        '管理形態',
-        '構造・階建て',
-        '土地権利',
-        '修繕積立費',
-        '管理費',
-        '物件番号',
-        '都市計画',
-        '車庫区分',
-        '現況',
-        '敷地の権利形態',
-        'バルコニー面積・方位',
-        '引渡日（引渡予定日）',
-        '地目',
-        '国土法提出',
-        '建築確認番号',
-        '建築条件',
-        '駐車場',
-        '用途地域',
-        '情報更新日',
-        '所在地',
-        '建物構造',
-        '築年月',
-        '建物面積',
-        '引渡し',
-        '私道面積',
-    ]
-
+def extract(row: dict[str, Any]) -> dict:
+    blob = row['html_zstd']
+    tree = tree_parser(parse_html(zstd_decompress(blob)) if blob else None)
     return {
-        'url_index': tree.meta('aodaisho:url_index'),
-        'saved_at': tree.meta('aodaisho:saved_at'),
-        'request_url': tree.meta('aodaisho:request_url'),
-        'final_url': tree.meta('aodaisho:final_url'),
-        'goto_status': tree.meta('aodaisho:goto_status'),
-        'ファイル名': Path(file_path).name,
-
+        'url_index': row['url_index'],
+        'saved_at': row['saved_at'],
+        'request_url': row['request_url'],
+        'final_url': row['final_url'],
+        'goto_status': row['http_status'],
+        'error_reason': row['error_reason'],
         '取り扱い店舗': tree.into_every('p').seeking.one(r'取り扱い店舗').after('p').text,
+        '価格': tree.into_every('dt').seeking.one(r'価格').after('dd').text,
+    }
 
-        'スタッフからのコメント': tree.into('.js-staff_comment').text,
-        '物件の魅力': tree.into_every('p').seeking.one(r'物件の魅力').after('p').text,
-
-        'img_desc': '\n'.join(tree.into_every('p.text-left').seeking.one(r'画像をクリックすると拡大画像がご覧に').after('ul').into_every('li').texts)
-    } | {dt_text: dd_text(dt_text) for dt_text in dt_texts}
 
 if __name__ == '__main__':
     main()

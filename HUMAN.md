@@ -194,7 +194,7 @@ HUMAN.md の検収 D を自分で「完了」にしない。人間が見る。
 process_map  glob_paths  meta_tags  append_csv  write_text  TreeParser.meta
 ```
 
-### 検収 A（1〜4 のあと）
+### 検収 A（1〜4 のあと）※人間がチェック済、無事完了。
 
 - [ ] `from aodaisho.kit import write_csv, write_parquet, hash_name, write_bytes, save_log` できる
 - [ ] 上の関数のシグネチャが、移す前の vault 版と同じ（docstring も）
@@ -206,7 +206,7 @@ process_map  glob_paths  meta_tags  append_csv  write_text  TreeParser.meta
 - [ ] `TreePage` / `_PageScoped._page` が `Page` のまま（`None` を受けない）
 - [ ] `live.page` が無く `next_page` がある。別名 `page()` が残っていない
 
-### 検収 B（5〜6 のあと）
+### 検収 B（5〜6 のあと）※人間がチェック済、無事完了。
 
 - [ ] `from aodaisho.vault import open_sqlite, read_sqlite, zstd_compress, zstd_decompress`
 - [ ] vault が kit / tree / pandas / selectolax を import していない
@@ -221,7 +221,7 @@ process_map  glob_paths  meta_tags  append_csv  write_text  TreeParser.meta
 - [ ] 削除対象の関数がまだコード上にある
 - [ ] README はまだ旧例のままでよい
 
-### 検収 C（7 のあと）
+### 検収 C（7 のあと）※人間がチェック済、無事完了。
 
 - [ ] README の crawl / scrape / extract / discover が正本 §5 の形（`next_page`、`tree.raw`、`read_sqlite....map`、`row[...]`、`tree_parser(None)`）
 - [ ] README に `meta_tags` / `tree.meta` / `write_text` / `append_csv` / `glob_paths` / `process_map` / `s.page()` が無い
