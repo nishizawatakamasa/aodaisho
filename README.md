@@ -63,16 +63,6 @@ from aodaisho.vault import open_sqlite, zstd_compress
 here = from_here(__file__)
 save_log(here('log/scraping.log'))
 
-PAGES = {
-    'url_index': 'INTEGER',
-    'saved_at': 'TEXT',
-    'request_url': 'TEXT NOT NULL',
-    'final_url': 'TEXT',
-    'http_status': 'INTEGER',
-    'error_reason': 'TEXT',
-    'html_zstd': 'BLOB',
-}
-
 items = list(pd.read_csv(here('csv/urls.csv'))['url'].items())
 db_path = here('data/runs/2026-10-18_030000.db')
 
@@ -84,11 +74,19 @@ with (
         recycle=RecycleEvery(browser=300, context=100),
     ) as session,
 ):
-    pages = db.create_table('pages', PAGES)
+    table = db.create_table('pages', {
+        'url_index': 'INTEGER',
+        'saved_at': 'TEXT',
+        'request_url': 'TEXT NOT NULL',
+        'final_url': 'TEXT',
+        'http_status': 'INTEGER',
+        'error_reason': 'TEXT',
+        'html_zstd': 'BLOB',
+    })
     for url_index, request_url in items:
         tree = tree_page(session.next_page())
         response = tree.goto(request_url)
-        pages.insert({
+        table.insert({
             'url_index': url_index,
             'saved_at': datetime.now(timezone.utc).isoformat(),
             'request_url': request_url,

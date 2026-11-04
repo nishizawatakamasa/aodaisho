@@ -203,8 +203,8 @@ def open_patchright(
             browser_options={'channel': 'chrome', 'headless': False},
             context_options={'viewport': {'width': 1920, 'height': 1080}},
             recycle=RecycleEvery(browser=300, context=100, page=20),
-        ) as s:
-            page = s.next_page()
+        ) as session:
+            page = session.next_page()
     """
     return PatchrightSession(
         browser_options=browser_options,
@@ -229,8 +229,8 @@ def open_camoufox(
             browser_options={'headless': False, 'humanize': True},
             context_options={'viewport': {'width': 1920, 'height': 1080}},
             recycle=RecycleEvery(browser=300, context=100, page=20),
-        ) as s:
-            page = s.next_page()
+        ) as session:
+            page = session.next_page()
     """
     return CamoufoxSession(
         browser_options=browser_options,
