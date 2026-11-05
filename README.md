@@ -80,7 +80,6 @@ with (
         'request_url': 'TEXT NOT NULL',
         'final_url': 'TEXT',
         'http_status': 'INTEGER',
-        'error_reason': 'TEXT',
         'html_zstd': 'BLOB',
     })
     for url_index, request_url in items:
@@ -92,7 +91,6 @@ with (
             'request_url': request_url,
             'final_url': tree.raw.url if response else None,
             'http_status': response.status if response else None,
-            'error_reason': None if response else 'goto',
             'html_zstd': zstd_compress(tree.raw.content()) if response else None,
         })
 ```
@@ -208,7 +206,6 @@ def extract(row: dict[str, Any]) -> dict:
         'request_url': row['request_url'],
         'final_url': row['final_url'],
         'goto_status': row['http_status'],
-        'error_reason': row['error_reason'],
         '取り扱い店舗': tree.into_every('p').seeking.one(r'取り扱い店舗').after('p').text,
         'スタッフからのコメント': tree.into('.js-staff_comment').text,
         '物件の魅力': tree.into_every('p').seeking.one(r'物件の魅力').after('p').text,
