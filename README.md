@@ -150,6 +150,58 @@ def main() -> None:
 def extract(row: dict[str, Any]) -> dict:
     blob = row['html_zstd']
     tree = tree_parser(parse_html(zstd_decompress(blob)) if blob else None)
+    dt_seeker = tree.into_every('dt').seeking
+
+    def dd_text(pattern: str) -> str | None:
+        return dt_seeker.one(pattern).after('dd').text
+    
+    dt_texts = [
+        '価格',
+        '交通',
+        '総戸数',
+        '月々の支払い目安額',
+        'セットバック',
+        '引渡日（入居予定日）',
+        '所在階',
+        '土地面積',
+        '取引態様',
+        '設備・条件',
+        '最寄りの学校',
+        '専有面積',
+        '接道状況',
+        '間取り',
+        '備考',
+        '建ぺい率 /容積率',
+        '物件種別',
+        '管理会社',
+        '次回更新予定日',
+        '管理形態',
+        '構造・階建て',
+        '土地権利',
+        '修繕積立費',
+        '管理費',
+        '物件番号',
+        '都市計画',
+        '車庫区分',
+        '現況',
+        '敷地の権利形態',
+        'バルコニー面積・方位',
+        '引渡日（引渡予定日）',
+        '地目',
+        '国土法提出',
+        '建築確認番号',
+        '建築条件',
+        '駐車場',
+        '用途地域',
+        '情報更新日',
+        '所在地',
+        '建物構造',
+        '築年月',
+        '建物面積',
+        '引渡し',
+        '私道面積',
+    ]
+
     return {
         'url_index': row['url_index'],
         'saved_at': row['saved_at'],
@@ -158,9 +210,10 @@ def extract(row: dict[str, Any]) -> dict:
         'goto_status': row['http_status'],
         'error_reason': row['error_reason'],
         '取り扱い店舗': tree.into_every('p').seeking.one(r'取り扱い店舗').after('p').text,
-        '価格': tree.into_every('dt').seeking.one(r'価格').after('dd').text,
-    }
-
+        'スタッフからのコメント': tree.into('.js-staff_comment').text,
+        '物件の魅力': tree.into_every('p').seeking.one(r'物件の魅力').after('p').text,
+        'img_desc': '\n'.join(tree.into_every('p.text-left').seeking.one(r'画像をクリックすると拡大画像がご覧に').after('ul').into_every('li').texts),
+    } | {dt_text: dd_text(dt_text) for dt_text in dt_texts}
 
 if __name__ == '__main__':
     main()

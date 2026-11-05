@@ -10,17 +10,6 @@ import zstandard as zstd
 from loguru import logger
 from tqdm import tqdm
 
-__all__ = [
-    'open_sqlite',
-    'read_sqlite',
-    'zstd_compress',
-    'zstd_decompress',
-    'SqliteDb',
-    'SqliteTable',
-    'SqliteRead',
-    'SqliteReadTable',
-]
-
 
 def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
