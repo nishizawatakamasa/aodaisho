@@ -1,5 +1,6 @@
 import csv
 import hashlib
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -18,6 +19,10 @@ def parse_html(html: str | bytes) -> LexborHTMLParser | None:
 def from_here(file: str) -> Callable[[str], Path]:
     base = Path(file).resolve().parent
     return lambda path: base / path
+
+
+def now_jst() -> str:
+    return datetime.now(timezone(timedelta(hours=9))).isoformat()
 
 
 def _ensure_parent(path: Path) -> None:

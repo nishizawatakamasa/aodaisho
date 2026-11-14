@@ -10,17 +10,27 @@
 * **生データはパースせず保存する**
   * 収集時は HTML をパースしない。`zstd` BLOB として SQLite に逐次保存する。抽出ロジックはあとから何度でも `map` で再実行する。
 * **BLOB 付き表は Parquet に焼かない**
-  * 行単位の `map`（1ページ分の HTML を1ワーカーへ）は行志向の SQLite が筋。Parquet は列志向で、今の `map`（行ごと）と相性が悪い。完成後の「触りたくない」はフォーマット変更ではなく、読み取り専用 API で満たす。
-* **書き込みと読み取りを分ける**
-  * 収集中: `open_sqlite`（追記・resume）。
-  * 収集後: `read_sqlite` のみ（readonly）。discover / extract / 再抽出はここから `map` する。同じファイルを `open_sqlite` で開き直さない。
+  * 行単位の変換（1ページ分の HTML を1ワーカーへ）は行志向の SQLite が筋。Parquet は列志向で、この処理と相性が悪い。完成後の「触りたくない」はフォーマット変更ではなく、収集後は `open_sqlite` で書き込まないことで満たす。
+* **SQLite の入口はふたつだけ**
+  * 基本は全部 `open_sqlite`（接続セッション: DDL / INSERT / 軽い SELECT）。
+  * 特殊なのは並列変換だけで、単体関数 `map_sqlite`。discover / extract はここ。db オブジェクトは出さない。
   * 手打ち SQL（`pd.read_sql`）も、生ページの `pd.read_parquet` もしない。
 * **スキーマの正本はスクレイピングプロジェクト側**
   * aodaisho は表の形を知らない。列定義はプロジェクト内の `schema.py` に置き、crawl / scrape が同じ dict で `ensure_table` する。run ファイルが複数でも、形はプロジェクトで1つ。
 
 ## 2. API
 
-### 書き込み: `with open_sqlite(path) as db`
+基本の SQLite アクセスはすべて `open_sqlite`。`map_sqlite` は並列変換専用の単体関数で、`open_sqlite` に似せたチェーン（`read_sqlite(path).table().map()`）は作らない。
+
+| | `open_sqlite` | `map_sqlite` |
+| :--- | :--- | :--- |
+| 形 | `with` で接続を握る | 関数1発。db オブジェクトなし |
+| 仕事 | `ensure_table` / `table` → `insert` / `upsert` / `to_df` | 全行をプロセスプールで `fn` に渡す |
+| 接続 | 1本 | ワーカーが path から readonly で開き直す |
+
+extract を `with open_sqlite(..., readonly=True)` に寄せない。
+
+### 接続セッション: `with open_sqlite(path) as db`
 
 | メソッド | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- |
@@ -29,23 +39,30 @@
 
 `ensure_table` はスキーマ保証、`table` は取得。役割を分ける（CQS のための `None` にこだわらないが、2行で揃える）。
 
-### `Table`（書き込み側）
+### `Table`
 
 | メソッド | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- |
-| **`insert`** | `row: dict[str, Any]` | `bool` | 普通の `INSERT`。URL 集め用。「無かったら足す」。`OR IGNORE` もフラグも付けない。失敗はログして `False`。省略した列は SQLite に任せる（`INTEGER PRIMARY KEY` の自動採番など）。 |
-| **`upsert`** | `row: dict[str, Any]`, `on: str` | `bool` | 同じキーなら上書き。`INSERT ... ON CONFLICT(on) DO UPDATE`。`INSERT OR REPLACE` は使わない（行を消して入れ直すと `url_index` が振り直される）。`on` はこの書き込みの話なので `upsert` 側に置く。 |
+| **`insert`** | `row: dict[str, Any]` | `bool` | 普通の `INSERT`。URL 集め用。「無かったら足す」。`OR IGNORE` もフラグも付けない。失敗はログして `False`。省略した列は SQLite に任せる。 |
+| **`upsert`** | `row: dict[str, Any]`, `on: str` | `bool` | 同じキーなら上書き。`INSERT ... ON CONFLICT(on) DO UPDATE`。`INSERT OR REPLACE` は使わない（行を消して入れ直す）。`on` はこの書き込みの話なので `upsert` 側に置く。 |
 | **`to_df`** | `*columns: str` | `pd.DataFrame` | 指定列だけ読む（BLOB を飛ばして差分計算する）。引数なしは全列。**list は受けない**（列名が変数なら `to_df(*cols)`）。 |
 
-`insert` と `upsert` は動詞が違うので両方残す。書き込み中の `Table` に `map` は生やさない。`map` はプロセスを分けて path から開き直す読み取り専用の仕事。
+`insert` と `upsert` は動詞が違うので両方残す。`Table` に `map` は生やさない。
 
-### 読み取り: `read_sqlite(path).table(name)`
+### 並列変換: `map_sqlite(path, table, fn)`
 
-| メソッド | 引数 | 戻り値 | 説明 |
-| :--- | :--- | :--- | :--- |
-| **`map`** | `fn: Callable[[dict], dict \| None]` | `list[dict]` | 全行をプロセスプールで `fn` に渡す。`None` は捨てる。`tqdm` 付き。入力は常に1行分の dict（BLOB 含む）。 |
+| 引数 | 型 | 説明 |
+| :--- | :--- | :--- |
+| **`path`** | `str \| Path` | SQLite ファイル |
+| **`table`** | `str` | テーブル名 |
+| **`fn`** | `Callable[[dict], dict \| None]` | 1行分の dict を受け、dict か `None` を返す。`None` は捨てる |
 
-`fn` の中で `zstd_decompress` → パースする。並列の切り方は実装側（`rowid` 範囲スキャンなど）。呼び出し側は今と同じ `map(fn)` だけ。
+戻り値は `list[dict]`。`write_parquet` にそのまま渡す。`tqdm` 付き。行の形は `insert` / `upsert` と同じ dict（属性アクセス用の Record は作らない）。`fn` の中で `zstd_decompress` → パースする。並列の切り方は実装側（`rowid` 範囲スキャンなど）。
+
+```python
+rows = map_sqlite(db_path, 'pages', extract)
+write_parquet(here('parquet/extract.parquet'), rows)
+```
 
 ### 重複の扱い
 
@@ -60,13 +77,11 @@ UNIQUE はスキーマの約束。
 
 ```python
 URLS_SCHEMA = {
-    'url_index': 'INTEGER PRIMARY KEY',  # 省略 INSERT で自動採番。resume してもずれない
     'url': 'TEXT UNIQUE',
-    'created_at': 'TEXT',
+    'saved_at': 'TEXT',
 }
 
 PAGES_SCHEMA = {
-    'url_index': 'INTEGER UNIQUE',
     'saved_at': 'TEXT',
     'request_url': 'TEXT NOT NULL UNIQUE',
     'final_url': 'TEXT',
@@ -83,6 +98,7 @@ PAGES_SCHEMA = {
 
 ```python
 from schema import URLS_SCHEMA, PAGES_SCHEMA
+from aodaisho.kit import now_jst
 ```
 
 ### ① crawl.py
@@ -100,14 +116,14 @@ with open_sqlite(db_path) as db:
             continue
         urls_table.insert({
             'url': url,
-            'created_at': datetime.now(timezone.utc).isoformat(),
+            'saved_at': now_jst(),
         })
         seen.add(url)
 ```
 
 ### ② scrape.py
 
-未完了だけアクセスする。`url_index` は crawl 時点の安定 ID を使う（`enumerate` しない）。保存は `upsert`。
+未完了だけアクセスする。保存は `upsert`。identity は `request_url`。
 
 ```python
 with open_sqlite(db_path) as db:
@@ -116,16 +132,15 @@ with open_sqlite(db_path) as db:
     urls_table = db.table('urls')
     pages_table = db.table('pages')
 
-    df_urls = urls_table.to_df('url_index', 'url')
+    df_urls = urls_table.to_df('url')
     df_pages = pages_table.to_df('request_url', 'http_status')
     done = set(df_pages.loc[df_pages['http_status'].eq(200), 'request_url'])
-    todo = df_urls[~df_urls['url'].isin(done)]
+    todo = df_urls.loc[~df_urls['url'].isin(done), 'url']
 
-    for url_index, url in todo[['url_index', 'url']].itertuples(index=False):
+    for url in todo:
         res = fetch(url)
         pages_table.upsert({
-            'url_index': url_index,
-            'saved_at': datetime.now(timezone.utc).isoformat(),
+            'saved_at': now_jst(),
             'request_url': url,
             'final_url': res.url if res else None,
             'http_status': res.status if res else None,
@@ -133,16 +148,16 @@ with open_sqlite(db_path) as db:
         }, on='request_url')
 ```
 
-`todo` は URL の set に落とさない（`url_index` が要る）。`pages` の失敗行だけを `todo` にすると、未着手が落ちる。
+`pages` の失敗行だけを `todo` にすると、未着手が落ちる。
 
-完走後、この SQLite はアーカイブになる。以降は `read_sqlite` だけ使う。
+完走後、この SQLite はアーカイブになる。以降は `open_sqlite` で書き込まず、extract は `map_sqlite` を使う。
 
 ### ③ discover.py / extract.py
 
-SQLite から直接 `map`。生ページを pandas で全件ロードしない。失敗行は blob が無いので `fn` が `None` を返せば捨てられる。
+`map_sqlite` で1行ずつ変換する。生ページを pandas で全件ロードしない。失敗行は blob が無いので `fn` が `None` を返せば捨てられる。
 
 ```python
-rows = read_sqlite(db_path).table('pages').map(extract)
+rows = map_sqlite(db_path, 'pages', extract)
 write_parquet(here('parquet/extract.parquet'), rows)
 
 
@@ -152,7 +167,6 @@ def extract(row: dict) -> dict | None:
         return None
     tree = tree_parser(parse_html(zstd_decompress(blob)))
     return {
-        'url_index': row['url_index'],
         'request_url': row['request_url'],
         # ...
     }
@@ -171,12 +185,32 @@ df.to_parquet('parquet/clean.parquet')
 ## 5. やらないこと
 
 * `INSERT OR IGNORE`、および ignore 用の引数
-* `INSERT OR REPLACE`（`url_index` が振り直される）
+* `INSERT OR REPLACE`（行を消して入れ直す）
 * `ensure_table(..., on=...)`（判定キーは `upsert` 側）
 * `to_df(['a', 'b'])`（list）。`to_df('a', 'b')` か `to_df(*cols)` だけ
-* 書き込み `Table.map`（接続の役割が混ざる）
+* `Table.map`、および `read_sqlite(path).table().map()` のようなチェーン（並列変換は `map_sqlite` だけ）
+* 行を Record / SimpleNamespace にする（`insert` も parquet も dict）
 * 生 HTML の `raw_pages.parquet` 化、およびそれを入力にした extract
 * 収集完了と同時に SQLite を破棄する
 * extract / discover からのプロセスプール削除
 * 手打ち SQL
 * サイト用スキーマを aodaisho に置く / `crawl.py` からスキーマを import する
+* 今の `vault.py` をパッチして `create_table` をリネームする（公開 API は本 memo で置き換える）
+
+## 6. 実装時: 今の `vault.py` の扱い
+
+公開 API とモジュールの骨格は本 memo が正本。今の `vault.py` はテンプレートにしない。クラス名、関数の切り方、`create_table` 周辺を少し直して残さない。ファイルごと、memo の呼び出しに合わせて書いてよい。
+
+再利用するのは **振る舞いのエッセンス** だけ。名前や配置は捨てて、同じ仕事を memo 側の型に載せ直す。
+
+* 識別子のクオート、親ディレクトリ作成
+* 接続: `row_factory`、timeout、書き込みは WAL、読み取りは `mode=ro`
+* `with open_sqlite` の寿命: 終了時に WAL を checkpoint して close
+* `zstd` の圧縮・解凍（公開名 `zstd_compress` / `zstd_decompress` は今の呼び出しと揃える）
+* `map_sqlite`: プロセスプール、ワーカーは path から readonly で開く（Windows の spawn）、`tqdm`、`None` は捨てる。行は dict
+* 失敗は loguru。`insert` / `upsert` はロールバックして `False`
+* 1行ごとに commit（中断してもそこまで残る）
+
+今の公開契約は使わない。`create_table`、全列一致の `insert`、`read_sqlite`、`open_sqlite(..., readonly=True)` を extract 入口にすること、接続の上の `map`。
+
+`map_sqlite` の並列の切り方も、今の「1行ずつ `WHERE rowid = ?`」に合わせなくてよい。プロセスプールと path からの開き直しという要点だけ借りて、`rowid` 範囲スキャンなどにしてよい。
