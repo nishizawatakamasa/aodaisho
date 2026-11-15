@@ -15,6 +15,7 @@ dependencies = [
     "playwright>=1.40",
     "selectolax>=0.3",
     "pyarrow>=23.0",
+    "pandas>=2.2",
     "camoufox>=0.4",
     "loguru>=0.7",
     "tqdm>=4.66",

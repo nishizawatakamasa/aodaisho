@@ -9,6 +9,23 @@
 
 ## 使用例
 
+### schema.py
+
+```python
+URLS_SCHEMA = {
+    'url': 'TEXT',
+    'saved_at': 'TEXT',
+}
+
+PAGES_SCHEMA = {
+    'saved_at': 'TEXT',
+    'request_url': 'TEXT UNIQUE',
+    'final_url': 'TEXT',
+    'http_status': 'INTEGER',
+    'html_zstd': 'BLOB',
+}
+```
+
 ### crawl.py
 
 ```python
@@ -18,22 +35,31 @@ from loguru import logger
 
 from aodaisho.tree import tree_page
 from aodaisho.live import RecycleEvery, open_patchright
-from aodaisho.kit import from_here, save_log, write_csv
+from aodaisho.kit import from_here, now_jst, save_log
+from aodaisho.vault import open_sqlite
+
+from schema import URLS_SCHEMA
 
 here = from_here(__file__)
 save_log(here('log/crawling.log'))
+db_path = here('data/runs/2026-10-18_030000.db')
 
-with open_patchright(
-    browser_options={'channel': 'chrome', 'headless': False},
-    context_options={'viewport': {'width': 1920, 'height': 1080}},
-    recycle=RecycleEvery(browser=300, context=100, page=20),
-) as session:
+with (
+    open_sqlite(db_path) as db,
+    open_patchright(
+        browser_options={'channel': 'chrome', 'headless': False},
+        context_options={'viewport': {'width': 1920, 'height': 1080}},
+        recycle=RecycleEvery(browser=300, context=100, page=20),
+    ) as session,
+):
+    db.ensure_table('urls', URLS_SCHEMA)
+    urls_table = db.table('urls')
+
     tree = tree_page(session.next_page())
     tree.goto('https://home.katitas.jp/buyers_search')
     prefecture_urls = tree.into_every('div ul li a[href^="https://home.katitas.jp/buyers_search/area"]').urls
 
     n = len(prefecture_urls)
-    urls = []
     for i, prefecture_url in enumerate(prefecture_urls, 1):
         print(f'prefecture_url {i}/{n}')
         for page_num in range(1, 200):
@@ -42,28 +68,27 @@ with open_patchright(
                 break
             if not (bukken_elems := tree.into_every('ul li div a[href^="https://home.katitas.jp"]:has(p)')):
                 break
-            urls.extend(bukken_elems.urls)
+            for url in bukken_elems.urls:
+                urls_table.insert({
+                    'url': url,
+                    'saved_at': now_jst(),
+                })
         else:
             logger.warning(f'page limit reached: {prefecture_url!r}')
-write_csv(here('csv/urls.csv'), [{'url': url} for url in set(urls)])
 ```
 
 ### scrape.py
 
 ```python
-from datetime import datetime, timezone
-
-import pandas as pd
-
 from aodaisho.tree import tree_page
 from aodaisho.live import RecycleEvery, open_patchright
-from aodaisho.kit import from_here, save_log
+from aodaisho.kit import from_here, now_jst, save_log
 from aodaisho.vault import open_sqlite, zstd_compress
+
+from schema import PAGES_SCHEMA, URLS_SCHEMA
 
 here = from_here(__file__)
 save_log(here('log/scraping.log'))
-
-items = list(pd.read_csv(here('csv/urls.csv'))['url'].items())
 db_path = here('data/runs/2026-10-18_030000.db')
 
 with (
@@ -74,25 +99,26 @@ with (
         recycle=RecycleEvery(browser=300, context=100),
     ) as session,
 ):
-    table = db.create_table('pages', {
-        'url_index': 'INTEGER',
-        'saved_at': 'TEXT',
-        'request_url': 'TEXT NOT NULL',
-        'final_url': 'TEXT',
-        'http_status': 'INTEGER',
-        'html_zstd': 'BLOB',
-    })
-    for url_index, request_url in items:
+    db.ensure_table('urls', URLS_SCHEMA)
+    db.ensure_table('pages', PAGES_SCHEMA)
+    urls_table = db.table('urls')
+    pages_table = db.table('pages')
+
+    s_urls = urls_table.to_df('url')['url'].unique()
+    df_pages = pages_table.to_df('request_url', 'http_status')
+    done = set(df_pages.loc[df_pages['http_status'].eq(200), 'request_url'])
+    todo = [u for u in s_urls if u not in done]
+
+    for request_url in todo:
         tree = tree_page(session.next_page())
         response = tree.goto(request_url)
-        table.insert({
-            'url_index': url_index,
-            'saved_at': datetime.now(timezone.utc).isoformat(),
+        pages_table.upsert({
+            'saved_at': now_jst(),
             'request_url': request_url,
             'final_url': tree.raw.url if response else None,
             'http_status': response.status if response else None,
             'html_zstd': zstd_compress(tree.raw.content()) if response else None,
-        })
+        }, on='request_url')
 ```
 
 ### discover.py
@@ -104,20 +130,22 @@ import pyperclip
 
 from aodaisho.tree import tree_parser
 from aodaisho.kit import from_here, parse_html
-from aodaisho.vault import read_sqlite, zstd_decompress
+from aodaisho.vault import map_sqlite, zstd_decompress
 
 
 def main() -> None:
     here = from_here(__file__)
     db_path = here('data/runs/2026-10-18_030000.db')
-    results = read_sqlite(db_path).table('pages').map(labels_in_row)
+    results = map_sqlite(db_path, 'pages', labels_in_row)
     labels = [label for row in results for label in row['labels']]
     pyperclip.copy('\n'.join(set(labels)))
 
 
-def labels_in_row(row: dict[str, Any]) -> dict:
+def labels_in_row(row: dict[str, Any]) -> dict | None:
     blob = row['html_zstd']
-    tree = tree_parser(parse_html(zstd_decompress(blob)) if blob else None)
+    if not blob:
+        return None
+    tree = tree_parser(parse_html(zstd_decompress(blob)))
     return {
         'labels': [t.strip() for t in tree.into_every('dt').texts if t and t.strip()],
     }
@@ -134,20 +162,22 @@ from typing import Any
 
 from aodaisho.tree import tree_parser
 from aodaisho.kit import from_here, parse_html, write_parquet, save_log
-from aodaisho.vault import read_sqlite, zstd_decompress
+from aodaisho.vault import map_sqlite, zstd_decompress
 
 
 def main() -> None:
     here = from_here(__file__)
     save_log(here('log/extract.log'))
     db_path = here('data/runs/2026-10-18_030000.db')
-    rows = read_sqlite(db_path).table('pages').map(extract)
+    rows = map_sqlite(db_path, 'pages', extract)
     write_parquet(here('parquet/extract.parquet'), rows)
 
 
-def extract(row: dict[str, Any]) -> dict:
+def extract(row: dict[str, Any]) -> dict | None:
     blob = row['html_zstd']
-    tree = tree_parser(parse_html(zstd_decompress(blob)) if blob else None)
+    if not blob:
+        return None
+    tree = tree_parser(parse_html(zstd_decompress(blob)))
     dt_seeker = tree.into_every('dt').seeking
 
     def dd_text(pattern: str) -> str | None:
@@ -201,7 +231,6 @@ def extract(row: dict[str, Any]) -> dict:
     ]
 
     return {
-        'url_index': row['url_index'],
         'saved_at': row['saved_at'],
         'request_url': row['request_url'],
         'final_url': row['final_url'],
@@ -240,7 +269,7 @@ def normalize_ws(s):
     return s.replace(r'\s+', ' ', regex=True)
 ```
 ```python
-df = df_raw.sort_values('saved_at')[['url_index', 'saved_at', 'request_url', 'final_url']].copy()
+df = df_raw.sort_values('saved_at')[['saved_at', 'request_url', 'final_url']].copy()
 
 df['事例種別'] = df_raw['物件種別'].str.contains(r'中古|土地').map({True: '中古売出'})
 df['総額'] = (
