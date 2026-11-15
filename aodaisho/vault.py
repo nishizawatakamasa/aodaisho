@@ -4,12 +4,14 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import pandas as pd
 import zstandard as zstd
 from loguru import logger
 from tqdm import tqdm
+
+T = TypeVar('T')
 
 
 def _ensure_parent(path: Path) -> None:
@@ -164,13 +166,13 @@ def open_sqlite(path: str | Path) -> Iterator[SqliteDb]:
 
 _map_path: Path | None = None
 _map_table: str | None = None
-_map_fn: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None
+_map_fn: Callable[[dict[str, Any]], Any] | None = None
 
 
 def _map_init(
     path: Path,
     table: str,
-    fn: Callable[[dict[str, Any]], dict[str, Any] | None],
+    fn: Callable[[dict[str, Any]], Any],
 ) -> None:
     global _map_path, _map_table, _map_fn
     _map_path = Path(path)
@@ -178,7 +180,7 @@ def _map_init(
     _map_fn = fn
 
 
-def _map_range(bounds: tuple[int, int]) -> list[dict[str, Any]]:
+def _map_range(bounds: tuple[int, int]) -> list[Any]:
     start, end = bounds
     path = _map_path
     table = _map_table
@@ -191,15 +193,12 @@ def _map_range(bounds: tuple[int, int]) -> list[dict[str, Any]]:
             f'SELECT * FROM {_quote_ident(table)} WHERE rowid BETWEEN ? AND ? ORDER BY rowid',
             (start, end),
         )
-        rows: list[dict[str, Any]] = []
+        rows: list[Any] = []
         for fetched in cur:
             try:
-                row = fn(dict(fetched))
+                rows.append(fn(dict(fetched)))
             except Exception as e:
                 logger.error(f'[map_sqlite] {type(e).__name__}: {e}')
-                continue
-            if row is not None:
-                rows.append(row)
         return rows
     finally:
         conn.close()
@@ -213,11 +212,11 @@ def _auto_chunksize(n: int, workers: int | None) -> int:
 def map_sqlite(
     path: str | Path,
     table: str,
-    fn: Callable[[dict[str, Any]], dict[str, Any] | None],
+    fn: Callable[[dict[str, Any]], T],
     *,
     workers: int | None = None,
     chunksize: int | None = None,
-) -> list[dict[str, Any]]:
+) -> list[T]:
     path = Path(path).resolve()
     quoted = _quote_ident(table)
     conn = _connect(path, readonly=True)
@@ -237,7 +236,7 @@ def map_sqlite(
         (rowids[i], rowids[min(i + cs, len(rowids)) - 1])
         for i in range(0, len(rowids), cs)
     ]
-    out: list[dict[str, Any]] = []
+    out: list[T] = []
     with ProcessPoolExecutor(
         max_workers=workers,
         initializer=_map_init,

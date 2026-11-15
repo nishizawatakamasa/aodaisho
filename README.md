@@ -141,11 +141,9 @@ def main() -> None:
     pyperclip.copy('\n'.join(set(labels)))
 
 
-def labels_in_row(row: dict[str, Any]) -> dict | None:
+def labels_in_row(row: dict[str, Any]) -> dict:
     blob = row['html_zstd']
-    if not blob:
-        return None
-    tree = tree_parser(parse_html(zstd_decompress(blob)))
+    tree = tree_parser(parse_html(zstd_decompress(blob)) if blob else None)
     return {
         'labels': [t.strip() for t in tree.into_every('dt').texts if t and t.strip()],
     }
@@ -173,11 +171,9 @@ def main() -> None:
     write_parquet(here('parquet/extract.parquet'), rows)
 
 
-def extract(row: dict[str, Any]) -> dict | None:
+def extract(row: dict[str, Any]) -> dict:
     blob = row['html_zstd']
-    if not blob:
-        return None
-    tree = tree_parser(parse_html(zstd_decompress(blob)))
+    tree = tree_parser(parse_html(zstd_decompress(blob)) if blob else None)
     dt_seeker = tree.into_every('dt').seeking
 
     def dd_text(pattern: str) -> str | None:
