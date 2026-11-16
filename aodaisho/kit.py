@@ -1,5 +1,7 @@
 import csv
 import hashlib
+import random
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
@@ -23,6 +25,17 @@ def from_here(file: str) -> Callable[[str], Path]:
 
 def now_jst() -> str:
     return datetime.now(timezone(timedelta(hours=9))).isoformat()
+
+
+def nap(lo: float, hi: float, *, chance: float | None = None) -> float:
+    '''``lo``〜``hi`` の範囲で寝る。``chance`` を付けるとその確率でのみ寝る。寝た秒数を返す。'''
+    if chance is not None and not 0 <= chance <= 1:
+        raise ValueError(f'chance は 0〜1 で指定してください (got {chance})')
+    if chance is not None and random.random() >= chance:
+        return 0.0
+    delay = random.uniform(lo, hi)
+    time.sleep(delay)
+    return delay
 
 
 def _ensure_parent(path: Path) -> None:

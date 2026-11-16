@@ -106,7 +106,6 @@ class TreePage(_PageScoped):
         url: str | None,
         try_cnt: int = 3,
         wait_range: tuple[float, float] = (3, 5),
-        sleep_after: tuple[float, float] | None = (1, 2),
     ) -> Response | None:
         if not url:
             return None
@@ -114,8 +113,6 @@ class TreePage(_PageScoped):
             try:
                 response = self._page.goto(url)
                 if response is not None:
-                    if sleep_after is not None:
-                        time.sleep(random.uniform(*sleep_after))
                     return response
                 reason = 'response is None'
             except Exception as e:
