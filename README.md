@@ -73,8 +73,9 @@ with (
                     'url': url,
                     'saved_at': now_jst(),
                 })
-            nap(1, 3)
-            nap(20, 60, chance=0.05)
+            nap(1, 2)
+            nap(4, 8, chance=0.15)
+            nap(20, 40, chance=0.02)
         else:
             logger.warning(f'page limit reached: {prefecture_url!r}')
 ```
@@ -111,7 +112,7 @@ with (
     done = set(df_pages.loc[df_pages['http_status'].eq(200), 'request_url'])
     todo = [u for u in s_urls if u not in done]
 
-    streak = 0
+    prev_status = None
     for request_url in todo:
         tree = tree_page(session.next_page())
         response = tree.goto(request_url)
@@ -125,15 +126,15 @@ with (
         }, on='request_url')
 
         if status == 429:
-            streak += 1
-            if streak >= 2:
+            if prev_status == 429:
                 break
             nap(60, 90)
-            continue
+        else:
+            nap(1, 2)
+            nap(4, 8, chance=0.15)
+            nap(20, 40, chance=0.02)
 
-        streak = 0
-        nap(1, 3)
-        nap(20, 60, chance=0.05)
+        prev_status = status
 ```
 
 ### discover.py

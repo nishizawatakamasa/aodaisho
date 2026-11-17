@@ -27,15 +27,23 @@ def now_jst() -> str:
     return datetime.now(timezone(timedelta(hours=9))).isoformat()
 
 
-def nap(lo: float, hi: float, *, chance: float | None = None) -> float:
-    '''``lo``〜``hi`` の範囲で寝る。``chance`` を付けるとその確率でのみ寝る。寝た秒数を返す。'''
-    if chance is not None and not 0 <= chance <= 1:
+def nap(lo: float, hi: float | None = None, *, chance: float = 1.0) -> float:
+    '''``lo``〜``hi`` の範囲で寝る。``hi`` を省略すると ``lo`` 秒ちょうど。
+    ``chance`` はその確率でのみ寝る（既定 1.0）。寝た秒数を返す。'''
+    if hi is None:
+        hi = lo
+    if not 0 <= chance <= 1:
         raise ValueError(f'chance は 0〜1 で指定してください (got {chance})')
-    if chance is not None and random.random() >= chance:
+    if lo < 0 or hi < 0:
+        raise ValueError(f'lo と hi は 0 以上で指定してください (got {lo}, {hi})')
+    if lo > hi:
+        raise ValueError(f'lo <= hi で指定してください (got {lo} > {hi})')
+    if random.random() < chance:
+        delay = random.uniform(lo, hi)
+        time.sleep(delay)
+        return delay
+    else:
         return 0.0
-    delay = random.uniform(lo, hi)
-    time.sleep(delay)
-    return delay
 
 
 def _ensure_parent(path: Path) -> None:
