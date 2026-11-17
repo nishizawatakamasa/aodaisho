@@ -39,11 +39,9 @@ def nap(lo: float, hi: float | None = None, *, chance: float = 1.0) -> float:
     if lo > hi:
         raise ValueError(f'lo <= hi で指定してください (got {lo} > {hi})')
     if random.random() < chance:
-        delay = random.uniform(lo, hi)
-        time.sleep(delay)
+        time.sleep(delay := random.uniform(lo, hi))
         return delay
-    else:
-        return 0.0
+    return 0.0
 
 
 def _ensure_parent(path: Path) -> None:
