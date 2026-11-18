@@ -10,6 +10,8 @@
 ### schema.py
 
 ```python
+DB_PATH = 'data/runs/2026-10-18_030000.db'
+
 URLS_SCHEMA = {
     'url': 'TEXT',
     'saved_at': 'TEXT',
@@ -36,11 +38,11 @@ from aodaisho.live import RecycleEvery, open_patchright
 from aodaisho.kit import from_here, now_jst, nap, save_log
 from aodaisho.vault import open_sqlite
 
-from schema import URLS_SCHEMA
+from schema import DB_PATH, URLS_SCHEMA
 
 here = from_here(__file__)
 save_log(here('log/crawling.log'))
-db_path = here('data/runs/2026-10-18_030000.db')
+db_path = here(DB_PATH)
 
 with (
     open_sqlite(db_path) as db,
@@ -64,9 +66,10 @@ with (
             tree = tree_page(session.next_page())
             if not tree.goto(f'{prefecture_url}?{urlencode({"page": page_num})}'):
                 break
-            if not (bukken_elems := tree.into_every('ul li div a[href^="https://home.katitas.jp"]:has(p)')):
+            bukken_urls = tree.into_every('ul li div a[href^="https://home.katitas.jp"]:has(p)').urls
+            if not bukken_urls:
                 break
-            for url in bukken_elems.urls:
+            for url in bukken_urls:
                 urls_table.insert({
                     'url': url,
                     'saved_at': now_jst(),
@@ -81,16 +84,18 @@ with (
 ### scrape.py
 
 ```python
+from tqdm import tqdm
+
 from aodaisho.tree import tree_page
 from aodaisho.live import RecycleEvery, open_patchright
 from aodaisho.kit import from_here, now_jst, nap, save_log, zstd_compress
 from aodaisho.vault import open_sqlite
 
-from schema import PAGES_SCHEMA, URLS_SCHEMA
+from schema import DB_PATH, PAGES_SCHEMA, URLS_SCHEMA
 
 here = from_here(__file__)
 save_log(here('log/scraping.log'))
-db_path = here('data/runs/2026-10-18_030000.db')
+db_path = here(DB_PATH)
 
 with (
     open_sqlite(db_path) as db,
@@ -105,13 +110,13 @@ with (
     urls_table = db.table('urls')
     pages_table = db.table('pages')
 
-    s_urls = urls_table.to_df('url')['url'].unique()
+    urls = urls_table.to_df('url')['url'].unique()
     df_pages = pages_table.to_df('request_url', 'http_status')
     done = set(df_pages.loc[df_pages['http_status'].eq(200), 'request_url'])
-    todo = [u for u in s_urls if u not in done]
+    todo = [u for u in urls if u not in done]
 
     prev_status = None
-    for request_url in todo:
+    for request_url in tqdm(todo):
         tree = tree_page(session.next_page())
         response = tree.goto(request_url)
         status = response.status if response else None
@@ -146,20 +151,22 @@ from aodaisho.tree import tree_parser
 from aodaisho.kit import from_here, parse_html, zstd_decompress
 from aodaisho.vault import map_sqlite
 
+from schema import DB_PATH
+
 
 def main() -> None:
     here = from_here(__file__)
-    db_path = here('data/runs/2026-10-18_030000.db')
+    db_path = here(DB_PATH)
     results = map_sqlite(db_path, 'pages', labels_in_row)
-    labels = [label for row in results for label in row['labels']]
-    pyperclip.copy('\n'.join(set(labels)))
+    labels = sorted({label for row in results for label in row['labels']})
+    pyperclip.copy('\n'.join(labels))
 
 
 def labels_in_row(row: dict[str, Any]) -> dict:
     blob = row['html_zstd']
     tree = tree_parser(parse_html(zstd_decompress(blob)) if blob else None)
     return {
-        'labels': [t.strip() for t in tree.into_every('dt').texts if t and t.strip()],
+        'labels': [t.strip() for t in tree.into_every('dt').texts if t.strip()],
     }
 
 
@@ -170,17 +177,21 @@ if __name__ == '__main__':
 ### extract.py
 
 ```python
+import re
+import unicodedata
 from typing import Any
 
 from aodaisho.tree import tree_parser
 from aodaisho.kit import from_here, parse_html, write_parquet, save_log, zstd_decompress
 from aodaisho.vault import map_sqlite
 
+from schema import DB_PATH
+
 
 def main() -> None:
     here = from_here(__file__)
     save_log(here('log/extract.log'))
-    db_path = here('data/runs/2026-10-18_030000.db')
+    db_path = here(DB_PATH)
     rows = map_sqlite(db_path, 'pages', extract)
     write_parquet(here('parquet/extract.parquet'), rows)
 
@@ -188,9 +199,11 @@ def main() -> None:
 def extract(row: dict[str, Any]) -> dict:
     blob = row['html_zstd']
     tree = tree_parser(parse_html(zstd_decompress(blob)) if blob else None)
+    p_seeker = tree.into_every('p').seeking
     dt_seeker = tree.into_every('dt').seeking
 
-    def dd_text(pattern: str) -> str | None:
+    def dd_text(label: str) -> str | None:
+        pattern = re.escape(unicodedata.normalize('NFKC', label))
         return dt_seeker.one(pattern).after('dd').text
     
     dt_texts = [
@@ -245,9 +258,9 @@ def extract(row: dict[str, Any]) -> dict:
         'request_url': row['request_url'],
         'final_url': row['final_url'],
         'goto_status': row['http_status'],
-        '取り扱い店舗': tree.into_every('p').seeking.one(r'取り扱い店舗').after('p').text,
+        '取り扱い店舗': p_seeker.one(r'取り扱い店舗').after('p').text,
         'スタッフからのコメント': tree.into('.js-staff_comment').text,
-        '物件の魅力': tree.into_every('p').seeking.one(r'物件の魅力').after('p').text,
+        '物件の魅力': p_seeker.one(r'物件の魅力').after('p').text,
         'img_desc': '\n'.join(tree.into_every('p.text-left').seeking.one(r'画像をクリックすると拡大画像がご覧に').after('ul').into_every('li').texts),
     } | {dt_text: dd_text(dt_text) for dt_text in dt_texts}
 
@@ -269,7 +282,8 @@ shikutyoson_pattern = "|".join(cities.map(lambda x: re.escape(x)))
 ```
 ```python
 df_raw = pd.read_parquet('parquet/extract.parquet')
-df_raw = df_raw.apply(lambda x: x.fillna('').str.normalize('NFKC').str.strip())
+str_cols = df_raw.select_dtypes('object').columns
+df_raw[str_cols] = df_raw[str_cols].apply(lambda x: x.fillna('').str.normalize('NFKC').str.strip())
 ```
 ```python
 # df_raw['現況'].unique()

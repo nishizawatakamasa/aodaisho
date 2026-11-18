@@ -86,8 +86,8 @@ class SqliteDb:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def ensure_table(self, name: str, schema: Mapping[str, str]) -> Table:
-        '''テーブルが無ければ schema（列名 → 型）で作成して Table を返す。既にあればスキーマが違っても作り直さない。'''
+    def ensure_table(self, name: str, schema: Mapping[str, str]) -> None:
+        '''テーブルが無ければ schema（列名 → 型）で作成する。既にあればスキーマが違っても作り直さない。'''
         if not schema:
             raise ValueError('schema must not be empty')
         col_sql = ', '.join(f'{_quote_ident(col)} {typ}' for col, typ in schema.items())
@@ -97,7 +97,6 @@ class SqliteDb:
         except Exception as e:
             logger.error(f'[ensure_table] {name} {type(e).__name__}: {e}')
             raise
-        return Table(self._conn, name)
 
     def table(self, name: str) -> Table:
         return Table(self._conn, name)
