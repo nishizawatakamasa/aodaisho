@@ -85,8 +85,8 @@ with (
 ```python
 from aodaisho.tree import tree_page
 from aodaisho.live import RecycleEvery, open_patchright
-from aodaisho.kit import from_here, now_jst, nap, save_log
-from aodaisho.vault import open_sqlite, zstd_compress
+from aodaisho.kit import from_here, now_jst, nap, save_log, zstd_compress
+from aodaisho.vault import open_sqlite
 
 from schema import PAGES_SCHEMA, URLS_SCHEMA
 
@@ -145,8 +145,8 @@ from typing import Any
 import pyperclip
 
 from aodaisho.tree import tree_parser
-from aodaisho.kit import from_here, parse_html
-from aodaisho.vault import map_sqlite, zstd_decompress
+from aodaisho.kit import from_here, parse_html, zstd_decompress
+from aodaisho.vault import map_sqlite
 
 
 def main() -> None:
@@ -175,8 +175,8 @@ if __name__ == '__main__':
 from typing import Any
 
 from aodaisho.tree import tree_parser
-from aodaisho.kit import from_here, parse_html, write_parquet, save_log
-from aodaisho.vault import map_sqlite, zstd_decompress
+from aodaisho.kit import from_here, parse_html, write_parquet, save_log, zstd_decompress
+from aodaisho.vault import map_sqlite
 
 
 def main() -> None:

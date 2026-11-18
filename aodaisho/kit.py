@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
+import zstandard as zstd
 from loguru import logger
 from selectolax.lexbor import LexborHTMLParser
 
@@ -16,6 +17,16 @@ def parse_html(html: str | bytes) -> LexborHTMLParser | None:
     except Exception as e:
         logger.error(f'[parse_html] {type(e).__name__}: {e}')
         return None
+
+
+def zstd_compress(data: str | bytes, level: int = 3) -> bytes:
+    if isinstance(data, str):
+        data = data.encode('utf-8')
+    return zstd.ZstdCompressor(level=level).compress(data)
+
+
+def zstd_decompress(data: bytes) -> bytes:
+    return zstd.ZstdDecompressor().decompress(data)
 
 
 def from_here(file: str) -> Callable[[str], Path]:

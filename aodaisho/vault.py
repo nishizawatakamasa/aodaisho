@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import pandas as pd
-import zstandard as zstd
 from loguru import logger
 from tqdm import tqdm
 
@@ -37,16 +36,6 @@ def _connect(path: Path, *, readonly: bool) -> sqlite3.Connection:
         conn.execute('PRAGMA journal_mode = WAL')
         conn.execute('PRAGMA synchronous = NORMAL')
     return conn
-
-
-def zstd_compress(data: str | bytes, level: int = 3) -> bytes:
-    if isinstance(data, str):
-        data = data.encode('utf-8')
-    return zstd.ZstdCompressor(level=level).compress(data)
-
-
-def zstd_decompress(data: bytes) -> bytes:
-    return zstd.ZstdDecompressor().decompress(data)
 
 
 def _execute_write(conn: sqlite3.Connection, sql: str, values: Sequence[Any], label: str) -> bool:
