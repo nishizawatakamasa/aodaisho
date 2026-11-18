@@ -2,15 +2,15 @@ import os
 import sqlite3
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
+from functools import partial
+from itertools import batched
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
 import pandas as pd
 from loguru import logger
 from tqdm import tqdm
-
-T = TypeVar('T')
 
 
 def _ensure_parent(path: Path) -> None:
@@ -24,85 +24,57 @@ def _quote_ident(name: str) -> str:
 
 
 def _connect(path: Path, *, readonly: bool) -> sqlite3.Connection:
-    path = Path(path)
     if readonly:
         uri = path.resolve().as_uri() + '?mode=ro'
-        conn = sqlite3.connect(uri, uri=True, timeout=30.0)
+        conn = sqlite3.connect(uri, uri=True, timeout=30.0, autocommit=True)
     else:
-        conn = sqlite3.connect(path, timeout=30.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute('PRAGMA busy_timeout = 5000')
-    if not readonly:
+        conn = sqlite3.connect(path, timeout=30.0, autocommit=True)
         conn.execute('PRAGMA journal_mode = WAL')
         conn.execute('PRAGMA synchronous = NORMAL')
     return conn
-
-
-def _execute_write(conn: sqlite3.Connection, sql: str, values: Sequence[Any], label: str) -> bool:
-    try:
-        conn.execute(sql, values)
-        conn.commit()
-        return True
-    except Exception as e:
-        logger.error(f'[{label}] {type(e).__name__}: {e}')
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return False
 
 
 class Table:
     def __init__(self, conn: sqlite3.Connection, name: str) -> None:
         self._conn = conn
         self._name = name
+        self._quoted_name = _quote_ident(name)
+
+    def _insert_sql(self, cols: Sequence[str]) -> str:
+        quoted_cols = ', '.join(_quote_ident(c) for c in cols)
+        placeholders = ', '.join(['?'] * len(cols))
+        return f'INSERT INTO {self._quoted_name} ({quoted_cols}) VALUES ({placeholders})'
+
+    def _write(self, op: str, sql: str, values: Sequence[Any]) -> bool:
+        try:
+            self._conn.execute(sql, values)
+            return True
+        except Exception as e:
+            logger.error(f'[{op}] {self._name} {type(e).__name__}: {e}')
+            return False
 
     def insert(self, row: Mapping[str, Any]) -> bool:
         if not row:
             logger.error(f'[insert] {self._name} empty row')
             return False
-        cols = list(row)
-        quoted_table = _quote_ident(self._name)
-        quoted_cols = ', '.join(_quote_ident(c) for c in cols)
-        placeholders = ', '.join('?' for _ in cols)
-        sql = f'INSERT INTO {quoted_table} ({quoted_cols}) VALUES ({placeholders})'
-        return _execute_write(
-            self._conn, sql, tuple(row[c] for c in cols), f'insert {self._name}'
-        )
+        sql = self._insert_sql(list(row))
+        return self._write('insert', sql, tuple(row.values()))
 
     def upsert(self, row: Mapping[str, Any], on: str) -> bool:
-        if not row:
-            logger.error(f'[upsert] {self._name} empty row')
-            return False
+        '''on で指定した列の値が同じならレコード上書き。対象列はスキーマで TEXT UNIQUE のようにする。'''
         if on not in row:
             logger.error(f'[upsert] {self._name} {on!r} missing from row')
             return False
-        cols = list(row)
-        quoted_table = _quote_ident(self._name)
-        quoted_cols = ', '.join(_quote_ident(c) for c in cols)
-        placeholders = ', '.join('?' for _ in cols)
-        update_cols = [c for c in cols if c != on]
-        sql = (
-            f'INSERT INTO {quoted_table} ({quoted_cols}) VALUES ({placeholders}) '
-            f'ON CONFLICT({_quote_ident(on)}) DO UPDATE SET '
+        sets = ', '.join(
+            f'{_quote_ident(c)}=excluded.{_quote_ident(c)}' for c in row if c != on
         )
-        if update_cols:
-            sql += ', '.join(
-                f'{_quote_ident(c)}=excluded.{_quote_ident(c)}' for c in update_cols
-            )
-        else:
-            sql += f'{_quote_ident(on)}=excluded.{_quote_ident(on)}'
-        return _execute_write(
-            self._conn, sql, tuple(row[c] for c in cols), f'upsert {self._name}'
-        )
+        action = f'UPDATE SET {sets}' if sets else 'NOTHING'
+        sql = f'{self._insert_sql(list(row))} ON CONFLICT({_quote_ident(on)}) DO {action}'
+        return self._write('upsert', sql, tuple(row.values()))
 
     def to_df(self, *columns: str) -> pd.DataFrame:
-        quoted_table = _quote_ident(self._name)
-        if columns:
-            quoted_cols = ', '.join(_quote_ident(c) for c in columns)
-        else:
-            quoted_cols = '*'
-        sql = f'SELECT {quoted_cols} FROM {quoted_table}'
+        quoted_cols = ', '.join(_quote_ident(c) for c in columns) if columns else '*'
+        sql = f'SELECT {quoted_cols} FROM {self._quoted_name}'
         try:
             return pd.read_sql_query(sql, self._conn)
         except Exception as e:
@@ -114,27 +86,20 @@ class SqliteDb:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def ensure_table(self, name: str, schema: Mapping[str, str]) -> None:
+    def ensure_table(self, name: str, schema: Mapping[str, str]) -> Table:
+        '''テーブルが無ければ schema（列名 → 型）で作成して Table を返す。既にあればスキーマが違っても作り直さない。'''
         if not schema:
             raise ValueError('schema must not be empty')
-        quoted_table = _quote_ident(name)
-        col_sql = ', '.join(
-            f'{_quote_ident(col)} {typ}' for col, typ in schema.items()
-        )
-        sql = f'CREATE TABLE IF NOT EXISTS {quoted_table} ({col_sql})'
+        col_sql = ', '.join(f'{_quote_ident(col)} {typ}' for col, typ in schema.items())
+        sql = f'CREATE TABLE IF NOT EXISTS {_quote_ident(name)} ({col_sql})'
         try:
             self._conn.execute(sql)
-            self._conn.commit()
         except Exception as e:
             logger.error(f'[ensure_table] {name} {type(e).__name__}: {e}')
-            try:
-                self._conn.rollback()
-            except Exception:
-                pass
             raise
+        return Table(self._conn, name)
 
     def table(self, name: str) -> Table:
-        _quote_ident(name)
         return Table(self._conn, name)
 
 
@@ -142,63 +107,36 @@ class SqliteDb:
 def open_sqlite(path: str | Path) -> Iterator[SqliteDb]:
     path = Path(path)
     _ensure_parent(path)
-    conn = _connect(path, readonly=False)
-    try:
+    with closing(_connect(path, readonly=False)) as conn:
         yield SqliteDb(conn)
-    finally:
-        try:
-            conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-        except Exception as e:
-            logger.error(f'[open_sqlite] {type(e).__name__}: {e}')
-        conn.close()
 
 
-_map_path: Path | None = None
-_map_table: str | None = None
-_map_fn: Callable[[dict[str, Any]], Any] | None = None
-
-
-def _map_init(
+def _map_range[T](
     path: Path,
     table: str,
-    fn: Callable[[dict[str, Any]], Any],
-) -> None:
-    global _map_path, _map_table, _map_fn
-    _map_path = Path(path)
-    _map_table = table
-    _map_fn = fn
-
-
-def _map_range(bounds: tuple[int, int]) -> list[Any]:
-    start, end = bounds
-    path = _map_path
-    table = _map_table
-    fn = _map_fn
-    if path is None or table is None or fn is None:
-        raise RuntimeError('map worker not initialized')
-    conn = _connect(path, readonly=True)
-    try:
-        cur = conn.execute(
-            f'SELECT * FROM {_quote_ident(table)} WHERE rowid BETWEEN ? AND ? ORDER BY rowid',
-            (start, end),
-        )
-        rows: list[Any] = []
-        for fetched in cur:
+    fn: Callable[[dict[str, Any]], T],
+    bounds: tuple[int, int],
+) -> tuple[list[T], list[str]]:
+    sql = f'SELECT rowid, * FROM {_quote_ident(table)} WHERE rowid BETWEEN ? AND ? ORDER BY rowid'
+    results: list[T] = []
+    errors: list[str] = []
+    with closing(_connect(path, readonly=True)) as conn:
+        cur = conn.execute(sql, bounds)
+        cols = [d[0] for d in cur.description[1:]]
+        for rowid, *values in cur:
             try:
-                rows.append(fn(dict(fetched)))
+                results.append(fn(dict(zip(cols, values))))
             except Exception as e:
-                logger.error(f'[map_sqlite] {type(e).__name__}: {e}')
-        return rows
-    finally:
-        conn.close()
+                errors.append(f'rowid={rowid} {type(e).__name__}: {e}')
+    return results, errors
 
 
 def _auto_chunksize(n: int, workers: int | None) -> int:
     w = workers or os.cpu_count() or 4
-    return max(1, min(64, n // (w * 4) or 1))
+    return max(1, min(64, n // (w * 4)))
 
 
-def map_sqlite(
+def map_sqlite[T](
     path: str | Path,
     table: str,
     fn: Callable[[dict[str, Any]], T],
@@ -206,35 +144,29 @@ def map_sqlite(
     workers: int | None = None,
     chunksize: int | None = None,
 ) -> list[T]:
+    '''table の各行を dict にして fn に渡し、プロセス並列で処理した結果を rowid 順のリストで返す。
+
+    fn はモジュールのトップレベルに定義すること（子プロセスへ pickle で渡すため）。
+    fn が例外を出した行は結果から除き、rowid 付きで親プロセスのログに残す。
+    '''
     path = Path(path).resolve()
-    quoted = _quote_ident(table)
-    conn = _connect(path, readonly=True)
+    quoted_table = _quote_ident(table)
     try:
-        try:
-            cur = conn.execute(f'SELECT rowid FROM {quoted} ORDER BY rowid')
-            rowids = [int(row[0]) for row in cur.fetchall()]
-        except Exception as e:
-            logger.error(f'[map_sqlite] {table} {type(e).__name__}: {e}')
-            raise
-    finally:
-        conn.close()
+        with closing(_connect(path, readonly=True)) as conn:
+            cur = conn.execute(f'SELECT rowid FROM {quoted_table} ORDER BY rowid')
+            rowids = [rowid for (rowid,) in cur]
+    except Exception as e:
+        logger.error(f'[map_sqlite] {table} {type(e).__name__}: {e}')
+        raise
     if not rowids:
         return []
     cs = chunksize if chunksize is not None else _auto_chunksize(len(rowids), workers)
-    bounds = [
-        (rowids[i], rowids[min(i + cs, len(rowids)) - 1])
-        for i in range(0, len(rowids), cs)
-    ]
+    bounds = [(chunk[0], chunk[-1]) for chunk in batched(rowids, cs)]
     out: list[T] = []
-    with ProcessPoolExecutor(
-        max_workers=workers,
-        initializer=_map_init,
-        initargs=(path, table, fn),
-    ) as ex:
-        for part in tqdm(
-            ex.map(_map_range, bounds),
-            total=len(bounds),
-            unit='chunk',
-        ):
-            out.extend(part)
+    with ProcessPoolExecutor(max_workers=workers) as ex:
+        parts = ex.map(partial(_map_range, path, table, fn), bounds)
+        for results, errors in tqdm(parts, total=len(bounds), unit='chunk'):
+            out.extend(results)
+            for msg in errors:
+                logger.error(f'[map_sqlite] {table} {msg}')
     return out
