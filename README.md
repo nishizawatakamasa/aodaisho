@@ -7,7 +7,7 @@
 
 ## 使用例
 
-### schema.py
+### db.py
 
 ```python
 DB_PATH = 'data/runs/2026-10-18_030000.db'
@@ -38,7 +38,7 @@ from aodaisho.live import RecycleEvery, open_patchright
 from aodaisho.kit import from_here, now_jst, nap, save_log
 from aodaisho.vault import open_sqlite
 
-from schema import DB_PATH, URLS_SCHEMA
+from db import DB_PATH, URLS_SCHEMA
 
 here = from_here(__file__)
 save_log(here('log/crawling.log'))
@@ -91,7 +91,7 @@ from aodaisho.live import RecycleEvery, open_patchright
 from aodaisho.kit import from_here, now_jst, nap, save_log, zstd_compress
 from aodaisho.vault import open_sqlite
 
-from schema import DB_PATH, PAGES_SCHEMA, URLS_SCHEMA
+from db import DB_PATH, PAGES_SCHEMA, URLS_SCHEMA
 
 here = from_here(__file__)
 save_log(here('log/scraping.log'))
@@ -151,7 +151,7 @@ from aodaisho.tree import tree_parser
 from aodaisho.kit import from_here, parse_html, zstd_decompress
 from aodaisho.vault import map_sqlite
 
-from schema import DB_PATH
+from db import DB_PATH
 
 
 def main() -> None:
@@ -185,7 +185,7 @@ from aodaisho.tree import tree_parser
 from aodaisho.kit import from_here, parse_html, write_parquet, save_log, zstd_decompress
 from aodaisho.vault import map_sqlite
 
-from schema import DB_PATH
+from db import DB_PATH
 
 
 def main() -> None:
