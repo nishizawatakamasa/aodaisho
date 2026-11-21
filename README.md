@@ -64,7 +64,11 @@ with (
         print(f'prefecture_url {i}/{n}')
         for page_num in range(1, 200):
             tree = tree_page(session.next_page())
-            if not tree.goto(f'{prefecture_url}?{urlencode({"page": page_num})}'):
+            response = tree.goto(f'{prefecture_url}?{urlencode({"page": page_num})}')
+            if not response:
+                break
+            if response.status != 200:
+                logger.warning(f'HTTP {response.status}: {response.url!r}')
                 break
             bukken_urls = tree.into_every('ul li div a[href^="https://home.katitas.jp"]:has(p)').urls
             if not bukken_urls:
@@ -84,6 +88,7 @@ with (
 ### scrape.py
 
 ```python
+from loguru import logger
 from tqdm import tqdm
 
 from aodaisho.tree import tree_page
@@ -130,7 +135,9 @@ with (
 
         if status == 429:
             if prev_status == 429:
+                logger.error('429 twice, abort')
                 break
+            logger.warning(f'429: {request_url!r}')
             nap(60, 90)
         else:
             nap(1, 2)
