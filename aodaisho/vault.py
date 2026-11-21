@@ -164,8 +164,10 @@ def map_sqlite[T](
     out: list[T] = []
     with ProcessPoolExecutor(max_workers=workers) as ex:
         parts = ex.map(partial(_map_range, path, table, fn), bounds)
-        for results, errors in tqdm(parts, total=len(bounds), unit='chunk'):
-            out.extend(results)
-            for msg in errors:
-                logger.error(f'[map_sqlite] {table} {msg}')
+        with tqdm(total=len(rowids), unit='row', desc=table, disable=None) as pbar:
+            for results, errors in parts:
+                out.extend(results)
+                for msg in errors:
+                    logger.error(f'[map_sqlite] {table} {msg}')
+                pbar.update(len(results) + len(errors))
     return out
