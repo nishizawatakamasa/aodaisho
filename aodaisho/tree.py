@@ -37,6 +37,10 @@ def _collect_str[T](items: list[T], getter: Callable[[T], str | None]) -> list[s
     return [v for item in items if (v := getter(item))]
 
 
+def _nfkc(s: str) -> str:
+    return ud.normalize('NFKC', s)
+
+
 def tree_page(page: Page) -> TreePage:
     return TreePage(page)
 
@@ -372,7 +376,7 @@ class TreeElementGroup(_PageScoped):
         pairs: list[tuple[str, TreeElement]] = []
         for e in self._elems:
             if (t := e.text):
-                pairs.append((ud.normalize('NFKC', t), e))
+                pairs.append((_nfkc(t), e))
         return TreeElementSeeker(self._page, pairs)
 
     @property
@@ -396,24 +400,16 @@ class TreeElementSeeker(_PageScoped):
         self._page = page
         self._pairs = pairs
 
-    def one(self, pattern: str) -> TreeElement:
-        try:
-            prog = re.compile(pattern)
-            for text, e in self._pairs:
-                if prog.search(text):
-                    return e
-        except Exception as e:
-            logger.warning(f'[seeking] {type(e).__name__}: {e} | pattern={pattern!r}')
+    def one(self, needle: str) -> TreeElement:
+        key = _nfkc(needle)
+        for text, e in self._pairs:
+            if key in text:
+                return e
         return self.tree_element(None)
 
-    def all(self, pattern: str) -> TreeElementGroup:
-        try:
-            prog = re.compile(pattern)
-            filtered = [e for text, e in self._pairs if prog.search(text)]
-            return self.tree_element_group(filtered)
-        except Exception as e:
-            logger.warning(f'[seeking] {type(e).__name__}: {e} | pattern={pattern!r}')
-            return self.tree_element_group([])
+    def all(self, needle: str) -> TreeElementGroup:
+        key = _nfkc(needle)
+        return self.tree_element_group([e for text, e in self._pairs if key in text])
 
 
 class TreeFrame(_PageScoped):
@@ -638,7 +634,7 @@ class TreeNodeGroup:
         pairs: list[tuple[str, TreeNode]] = []
         for n in self._nodes:
             if (t := n.text):
-                pairs.append((ud.normalize('NFKC', t), n))
+                pairs.append((_nfkc(t), n))
         return TreeNodeSeeker(pairs)
 
     @property
@@ -653,21 +649,13 @@ class TreeNodeSeeker:
     def __init__(self, pairs: list[tuple[str, TreeNode]]) -> None:
         self._pairs = pairs
 
-    def one(self, pattern: str) -> TreeNode:
-        try:
-            prog = re.compile(pattern)
-            for text, n in self._pairs:
-                if prog.search(text):
-                    return n
-        except Exception as e:
-            logger.warning(f'[seeking] {type(e).__name__}: {e} | pattern={pattern!r}')
+    def one(self, needle: str) -> TreeNode:
+        key = _nfkc(needle)
+        for text, n in self._pairs:
+            if key in text:
+                return n
         return tree_node(None)
 
-    def all(self, pattern: str) -> TreeNodeGroup:
-        try:
-            prog = re.compile(pattern)
-            filtered = [n for text, n in self._pairs if prog.search(text)]
-            return tree_node_group(filtered)
-        except Exception as e:
-            logger.warning(f'[seeking] {type(e).__name__}: {e} | pattern={pattern!r}')
-            return tree_node_group([])
+    def all(self, needle: str) -> TreeNodeGroup:
+        key = _nfkc(needle)
+        return tree_node_group([n for text, n in self._pairs if key in text])

@@ -177,8 +177,6 @@ if __name__ == '__main__':
 ### extract.py
 
 ```python
-import re
-import unicodedata
 from typing import Any
 
 from aodaisho.tree import tree_parser
@@ -203,8 +201,7 @@ def extract(row: dict[str, Any]) -> dict:
     dt_seeker = tree.into_every('dt').seeking
 
     def dd_text(label: str) -> str | None:
-        pattern = re.escape(unicodedata.normalize('NFKC', label))
-        return dt_seeker.one(pattern).after('dd').text
+        return dt_seeker.one(label).after('dd').text
     
     dt_texts = [
         '価格',
@@ -258,10 +255,10 @@ def extract(row: dict[str, Any]) -> dict:
         'request_url': row['request_url'],
         'final_url': row['final_url'],
         'goto_status': row['http_status'],
-        '取り扱い店舗': p_seeker.one(r'取り扱い店舗').after('p').text,
+        '取り扱い店舗': p_seeker.one('取り扱い店舗').after('p').text,
         'スタッフからのコメント': tree.into('.js-staff_comment').text,
-        '物件の魅力': p_seeker.one(r'物件の魅力').after('p').text,
-        'img_desc': '\n'.join(tree.into_every('p.text-left').seeking.one(r'画像をクリックすると拡大画像がご覧に').after('ul').into_every('li').texts),
+        '物件の魅力': p_seeker.one('物件の魅力').after('p').text,
+        'img_desc': '\n'.join(tree.into_every('p.text-left').seeking.one('画像をクリックすると拡大画像がご覧に').after('ul').into_every('li').texts),
     } | {dt_text: dd_text(dt_text) for dt_text in dt_texts}
 
 if __name__ == '__main__':
