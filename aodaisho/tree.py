@@ -480,24 +480,40 @@ class TreeShadowRoot(_PageScoped):
         if not self:
             return self.tree_element_group([])
         try:
-            n = self._host.evaluate(
-                '(el, sel) => el.shadowRoot?.querySelectorAll(sel)?.length ?? 0',
-                selector,
-            )
-            elems = []
-            for idx in range(n):
-                elem = self._host.evaluate_handle(
-                    '''(el, args) => {
-                        const [sel, i] = args;
-                        return el.shadowRoot.querySelectorAll(sel)[i];
-                    }''',
-                    [selector, idx],
-                ).as_element()
-                elems.append(self.tree_element(elem))
-            return self.tree_element_group(elems)
+            elems = self._shadow_matches(selector)
+            return self.tree_element_group([self.tree_element(e) for e in elems])
         except Exception as e:
-            logger.error(f'[into_shadow into_every] {type(e).__name__}: {e} | selector={selector!r}')
+            logger.error(
+                f'[into_shadow into_every] {type(e).__name__}: {e} | selector={selector!r}'
+            )
             return self.tree_element_group([])
+
+    def _shadow_matches(self, selector: str) -> list[ElementHandle]:
+        array_handle = self._host.evaluate_handle(
+            '(el, sel) => el.shadowRoot?.querySelectorAll(sel) ?? []',
+            selector,
+        )
+        try:
+            props = array_handle.get_properties()
+        finally:
+            array_handle.dispose()
+        adopted: list[ElementHandle] = []
+        try:
+            for key in sorted((k for k in props if k.isdigit()), key=int):
+                handle = props.pop(key)
+                elem = handle.as_element()
+                if elem is None:
+                    handle.dispose()
+                    continue
+                adopted.append(elem)
+            return adopted
+        except Exception:
+            for elem in adopted:
+                elem.dispose()
+            raise
+        finally:
+            for handle in props.values():
+                handle.dispose()
 
     def until(self, selector: str, timeout: int = 15000) -> TreeElement:
         '''
