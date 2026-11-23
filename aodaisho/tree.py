@@ -6,7 +6,7 @@ import re
 import time
 import unicodedata as ud
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urljoin
 
 from loguru import logger
@@ -108,14 +108,16 @@ class TreePage(_PageScoped):
     def goto(
         self,
         url: str | None,
+        *,
         try_cnt: int = 3,
-        wait_range: tuple[float, float] = (3, 5),
+        wait_range: tuple[float, float] = (3, 6),
+        **kwargs: Any,
     ) -> Response | None:
         if not url:
             return None
         for i in range(try_cnt):
             try:
-                response = self._page.goto(url)
+                response = self._page.goto(url, **kwargs)
                 if response is not None:
                     return response
                 reason = 'response is None'
