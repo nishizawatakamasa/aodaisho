@@ -21,25 +21,19 @@ from aodaisho.vault import open_sqlite
 
 from db_path import DB_PATH
 
-
-def main() -> None:
-    here = from_here(__file__)
-    with open_sqlite(here(DB_PATH)) as db:
-        db.create_table('urls', {
-            'url': 'TEXT',
-            'saved_at': 'TEXT',
-        })
-        db.create_table('pages', {
-            'saved_at': 'TEXT',
-            'request_url': 'TEXT UNIQUE',
-            'final_url': 'TEXT',
-            'http_status': 'INTEGER',
-            'html_zstd': 'BLOB',
-        })
-
-
-if __name__ == '__main__':
-    main()
+here = from_here(__file__)
+with open_sqlite(here(DB_PATH)) as db:
+    db.create_table('urls', {
+        'url': 'TEXT',
+        'saved_at': 'TEXT',
+    })
+    db.create_table('pages', {
+        'saved_at': 'TEXT',
+        'request_url': 'TEXT UNIQUE',
+        'final_url': 'TEXT',
+        'http_status': 'INTEGER',
+        'html_zstd': 'BLOB',
+    })
 ```
 
 ### info_db.py
@@ -50,15 +44,9 @@ from aodaisho.vault import open_sqlite
 
 from db_path import DB_PATH
 
-
-def main() -> None:
-    here = from_here(__file__)
-    with open_sqlite(here(DB_PATH)) as db:
-        db.info()
-
-
-if __name__ == '__main__':
-    main()
+here = from_here(__file__)
+with open_sqlite(here(DB_PATH)) as db:
+    db.info()
 ```
 
 ### crawl.py
