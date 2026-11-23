@@ -7,23 +7,58 @@
 
 ## 使用例
 
-### db.py
+### db_path.py
 
 ```python
-DB_PATH = 'data/runs/2026-10-18_030000.db'
+DB_PATH = 'data/2026-10-18_030000.db'
+```
 
-URLS_SCHEMA = {
-    'url': 'TEXT',
-    'saved_at': 'TEXT',
-}
+### create_db.py
 
-PAGES_SCHEMA = {
-    'saved_at': 'TEXT',
-    'request_url': 'TEXT UNIQUE',
-    'final_url': 'TEXT',
-    'http_status': 'INTEGER',
-    'html_zstd': 'BLOB',
-}
+```python
+from aodaisho.kit import from_here
+from aodaisho.vault import open_sqlite
+
+from db_path import DB_PATH
+
+
+def main() -> None:
+    here = from_here(__file__)
+    with open_sqlite(here(DB_PATH)) as db:
+        db.create_table('urls', {
+            'url': 'TEXT',
+            'saved_at': 'TEXT',
+        })
+        db.create_table('pages', {
+            'saved_at': 'TEXT',
+            'request_url': 'TEXT UNIQUE',
+            'final_url': 'TEXT',
+            'http_status': 'INTEGER',
+            'html_zstd': 'BLOB',
+        })
+
+
+if __name__ == '__main__':
+    main()
+```
+
+### info_db.py
+
+```python
+from aodaisho.kit import from_here
+from aodaisho.vault import open_sqlite
+
+from db_path import DB_PATH
+
+
+def main() -> None:
+    here = from_here(__file__)
+    with open_sqlite(here(DB_PATH)) as db:
+        db.info()
+
+
+if __name__ == '__main__':
+    main()
 ```
 
 ### crawl.py
@@ -38,7 +73,7 @@ from aodaisho.live import RecycleEvery, open_patchright
 from aodaisho.kit import from_here, now_jst, nap, save_log
 from aodaisho.vault import open_sqlite
 
-from db import DB_PATH, URLS_SCHEMA
+from db_path import DB_PATH
 
 here = from_here(__file__)
 save_log(here('log/crawling.log'))
@@ -52,7 +87,6 @@ with (
         recycle=RecycleEvery(browser=300, context=100, page=20),
     ) as session,
 ):
-    db.ensure_table('urls', URLS_SCHEMA)
     urls_table = db.table('urls')
 
     tree = tree_page(session.next_page())
@@ -96,7 +130,7 @@ from aodaisho.live import RecycleEvery, open_patchright
 from aodaisho.kit import from_here, now_jst, nap, save_log, zstd_compress
 from aodaisho.vault import open_sqlite
 
-from db import DB_PATH, PAGES_SCHEMA, URLS_SCHEMA
+from db_path import DB_PATH
 
 here = from_here(__file__)
 save_log(here('log/scraping.log'))
@@ -110,8 +144,6 @@ with (
         recycle=RecycleEvery(browser=300, context=100),
     ) as session,
 ):
-    db.ensure_table('urls', URLS_SCHEMA)
-    db.ensure_table('pages', PAGES_SCHEMA)
     urls_table = db.table('urls')
     pages_table = db.table('pages')
 
@@ -158,7 +190,7 @@ from aodaisho.tree import tree_parser
 from aodaisho.kit import from_here, parse_html, zstd_decompress
 from aodaisho.vault import map_sqlite
 
-from db import DB_PATH
+from db_path import DB_PATH
 
 
 def main() -> None:
@@ -190,7 +222,7 @@ from aodaisho.tree import tree_parser
 from aodaisho.kit import from_here, parse_html, write_parquet, save_log, zstd_decompress
 from aodaisho.vault import map_sqlite
 
-from db import DB_PATH
+from db_path import DB_PATH
 
 
 def main() -> None:

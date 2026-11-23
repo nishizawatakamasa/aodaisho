@@ -45,32 +45,31 @@ class Table:
         placeholders = ', '.join(['?'] * len(cols))
         return f'INSERT INTO {self._quoted_name} ({quoted_cols}) VALUES ({placeholders})'
 
-    def _write(self, op: str, sql: str, values: Sequence[Any]) -> bool:
+    def _write(self, op: str, sql: str, values: Sequence[Any]) -> None:
         try:
             self._conn.execute(sql, values)
-            return True
         except Exception as e:
             logger.error(f'[{op}] {self._name} {type(e).__name__}: {e}')
-            return False
+            raise
 
-    def insert(self, row: Mapping[str, Any]) -> bool:
+    def insert(self, row: Mapping[str, Any]) -> None:
         if not row:
             logger.error(f'[insert] {self._name} empty row')
-            return False
+            raise ValueError('empty row')
         sql = self._insert_sql(list(row))
-        return self._write('insert', sql, tuple(row.values()))
+        self._write('insert', sql, tuple(row.values()))
 
-    def upsert(self, row: Mapping[str, Any], on: str) -> bool:
+    def upsert(self, row: Mapping[str, Any], on: str) -> None:
         '''on で指定した列の値が同じならレコード上書き。対象列はスキーマで TEXT UNIQUE のようにする。'''
         if on not in row:
             logger.error(f'[upsert] {self._name} {on!r} missing from row')
-            return False
+            raise ValueError(f'{on!r} missing from row')
         sets = ', '.join(
             f'{_quote_ident(c)}=excluded.{_quote_ident(c)}' for c in row if c != on
         )
         action = f'UPDATE SET {sets}' if sets else 'NOTHING'
         sql = f'{self._insert_sql(list(row))} ON CONFLICT({_quote_ident(on)}) DO {action}'
-        return self._write('upsert', sql, tuple(row.values()))
+        self._write('upsert', sql, tuple(row.values()))
 
     def to_df(self, *columns: str) -> pd.DataFrame:
         quoted_cols = ', '.join(_quote_ident(c) for c in columns) if columns else '*'
@@ -86,16 +85,38 @@ class SqliteDb:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def ensure_table(self, name: str, schema: Mapping[str, str]) -> None:
-        '''テーブルが無ければ schema（列名 → 型）で作成する。既にあればスキーマが違っても作り直さない。'''
+    def create_table(self, name: str, schema: Mapping[str, str]) -> None:
+        '''schema（列名 → 型）でテーブルを作成する。既にあればエラー。'''
         if not schema:
             raise ValueError('schema must not be empty')
         col_sql = ', '.join(f'{_quote_ident(col)} {typ}' for col, typ in schema.items())
-        sql = f'CREATE TABLE IF NOT EXISTS {_quote_ident(name)} ({col_sql})'
+        sql = f'CREATE TABLE {_quote_ident(name)} ({col_sql})'
         try:
             self._conn.execute(sql)
         except Exception as e:
-            logger.error(f'[ensure_table] {name} {type(e).__name__}: {e}')
+            logger.error(f'[create_table] {name} {type(e).__name__}: {e}')
+            raise
+
+    def info(self) -> None:
+        '''各テーブルの CREATE 文と現在の行数を表示する。'''
+        try:
+            tables = self._conn.execute(
+                '''
+                SELECT name, sql FROM sqlite_master
+                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                ORDER BY name
+                '''
+            ).fetchall()
+            for i, (name, sql) in enumerate(tables):
+                (n,) = self._conn.execute(
+                    f'SELECT COUNT(*) FROM {_quote_ident(name)}'
+                ).fetchone()
+                if i:
+                    print()
+                print(sql)
+                print(f'current rows: {n}')
+        except Exception as e:
+            logger.error(f'[info] {type(e).__name__}: {e}')
             raise
 
     def table(self, name: str) -> Table:
