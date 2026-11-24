@@ -175,7 +175,7 @@ from typing import Any
 import pyperclip
 
 from aodaisho.tree import tree_parser
-from aodaisho.kit import from_here, parse_html, zstd_decompress
+from aodaisho.kit import from_here, nfkc, parse_html, zstd_decompress
 from aodaisho.vault import map_sqlite
 
 from db_path import DB_PATH
@@ -193,7 +193,7 @@ def labels_in_row(row: dict[str, Any]) -> dict:
     blob = row['html_zstd']
     tree = tree_parser(parse_html(zstd_decompress(blob)) if blob else None)
     return {
-        'labels': [t.strip() for t in tree.into_every('dt').texts if t.strip()],
+        'labels': [s for t in tree.into_every('dt').texts if (s := nfkc(t).strip())],
     }
 
 
@@ -227,8 +227,8 @@ def extract(row: dict[str, Any]) -> dict:
     p_seeker = tree.into_every('p').seeking
     dt_seeker = tree.into_every('dt').seeking
 
-    def dd_text(label: str) -> str | None:
-        return dt_seeker.one(label).after('dd').text
+    def dd_text(pattern: str) -> str | None:
+        return dt_seeker.one(pattern).after('dd').text
     
     dt_texts = [
         '価格',
@@ -236,7 +236,6 @@ def extract(row: dict[str, Any]) -> dict:
         '総戸数',
         '月々の支払い目安額',
         'セットバック',
-        '引渡日（入居予定日）',
         '所在階',
         '土地面積',
         '取引態様',
@@ -261,7 +260,6 @@ def extract(row: dict[str, Any]) -> dict:
         '現況',
         '敷地の権利形態',
         'バルコニー面積・方位',
-        '引渡日（引渡予定日）',
         '地目',
         '国土法提出',
         '建築確認番号',
@@ -286,6 +284,8 @@ def extract(row: dict[str, Any]) -> dict:
         'スタッフからのコメント': tree.into('.js-staff_comment').text,
         '物件の魅力': p_seeker.one('物件の魅力').after('p').text,
         'img_desc': '\n'.join(tree.into_every('p.text-left').seeking.one('画像をクリックすると拡大画像がご覧に').after('ul').into_every('li').texts),
+        '引渡日(入居予定日)': dd_text(r'引渡日\(入居予定日\)'),
+        '引渡日(引渡予定日)': dd_text(r'引渡日\(引渡予定日\)'),
     } | {dt_text: dd_text(dt_text) for dt_text in dt_texts}
 
 if __name__ == '__main__':
@@ -393,7 +393,7 @@ df['仕様'] = normalize_ws(df_raw['設備・条件'])
 
 df['土地権利'] = normalize_ws(df_raw['土地権利'])
 df['地目'] = normalize_ws(df_raw['地目'])
-df['引渡日（入居予定日）'] = normalize_ws(df_raw['引渡日（入居予定日）'])
+df['引渡日(入居予定日)'] = normalize_ws(df_raw['引渡日(入居予定日)'])
 df['物件番号'] = normalize_ws(df_raw['物件番号'])
 df['情報更新日'] = normalize_ws(df_raw['情報更新日'])
 ```

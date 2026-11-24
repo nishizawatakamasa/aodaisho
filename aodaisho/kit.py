@@ -2,6 +2,7 @@ import csv
 import hashlib
 import random
 import time
+import unicodedata as ud
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
@@ -36,6 +37,10 @@ def from_here(file: str) -> Callable[[str], Path]:
 
 def now_jst() -> str:
     return datetime.now(timezone(timedelta(hours=9))).isoformat()
+
+
+def nfkc(s: str) -> str:
+    return ud.normalize('NFKC', s)
 
 
 def nap(lo: float, hi: float | None = None, *, chance: float = 1.0) -> float:
