@@ -88,16 +88,19 @@ with (
             tree = tree_page(session.next_page())
             response = tree.goto(f'{prefecture_url}?{urlencode({"page": page_num})}')
             if not response:
-                break
+                logger.error(f'goto failed: {prefecture_url!r} page={page_num}')
+                continue
             if response.status != 200:
                 logger.warning(f'HTTP {response.status}: {response.url!r}')
+                continue
+            if tree.into_every('div').seeking.one('現在掲載中の物件はありません'):
                 break
-            bukken_urls = tree.into_every('ul li div a[href^="https://home.katitas.jp"]:has(p)').urls
-            if not bukken_urls:
-                break
-            for url in bukken_urls:
+            bukken_cards = tree.into_every('ul li div a[href^="https://home.katitas.jp"]:has(p)')
+            if not bukken_cards:
+                logger.warning(f'no listings: {prefecture_url!r} page={page_num}')
+            for bukken_card in bukken_cards:
                 urls_table.insert({
-                    'url': url,
+                    'url': bukken_card.url,
                     'saved_at': now_jst(),
                 })
             nap(1, 2)
@@ -135,7 +138,7 @@ with (
     urls_table = db.table('urls')
     pages_table = db.table('pages')
 
-    urls = urls_table.to_df('url')['url'].unique()
+    urls = urls_table.to_df('url')['url'].dropna().unique()
     df_pages = pages_table.to_df('request_url', 'http_status')
     done = set(df_pages.loc[df_pages['http_status'].eq(200), 'request_url'])
     todo = [u for u in urls if u not in done]
