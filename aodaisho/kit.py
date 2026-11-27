@@ -119,6 +119,6 @@ def write_bytes(path: Path, data: bytes) -> bool:
         return False
 
 def save_log(path: Path, level: str = 'WARNING') -> None:
-    '''コンソール（stderr）に出るログと同じ内容を、指定ファイルにも残す。'''
+    '''``level`` 以上のログを指定ファイルにも残す。'''
     _ensure_parent(path)
     logger.add(path, level=level, encoding='utf-8')
